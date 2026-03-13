@@ -13,8 +13,6 @@ jobs:
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -26,30 +24,33 @@ jobs:
           sh -c "$(curl -sSfL 'https://release.anza.xyz/stable/install')"
           echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
 
-      - name: Install LLVM
-        run: sudo apt-get install -y llvm
-
-      - name: Install BPF dependencies
-        run: |
-          cargo install cargo-bpf-clang 2>/dev/null || true
-
       - name: Install Anchor
         run: npm install -g @coral-xyz/anchor-cli
 
       - name: Install dependencies
         run: npm install
 
-      - name: Build with BPF
-        run: |
-          anchor build --bpfout target/deploy/clawfarm_masterpool.so 2>&1 || anchor build 2>&1
+      - name: Build
+        run: anchor build
 
-      - name: List all files
+      - name: Generate keypair
         run: |
-          find . -type f \( -name "*.so" -o -name "*keypair*" \) 2>/dev/null
-          ls -laR target/ 2>/dev/null | head -50
+          solana-keygen new --no-passphrase -o deploy-keypair.json
 
-      - name: Upload artifacts
+      - name: Show keypair
+        run: cat deploy-keypair.json
+
+      - name: Show Program ID
+        run: solana-keygen pubkey deploy-keypair.json
+
+      - name: Upload keypair
         uses: actions/upload-artifact@v4
         with:
-          name: clawfarm-program
-          path: target/
+          name: deploy-keypair
+          path: deploy-keypair.json
+
+      - name: Upload IDL
+        uses: actions/upload-artifact@v4
+        with:
+          name: program-idl
+          path: target/idl/
