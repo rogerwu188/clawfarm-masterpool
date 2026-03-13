@@ -31,7 +31,6 @@ jobs:
         run: |
           solana --version
           anchor --version
-          rustc --version
 
       - name: Install Node.js dependencies
         run: npm install
@@ -39,24 +38,26 @@ jobs:
       - name: Build Anchor program
         run: anchor build
 
-      - name: List build output
+      - name: List all build output
         run: |
-          ls -la target/deploy/
-          ls -la target/idl/
+          find target -name "*.so" -o -name "*keypair*" -o -name "*.json" 2>/dev/null | head -20
+          ls -la target/deploy/ 2>/dev/null || echo "No deploy dir"
 
-      - name: Upload compiled program
+      - name: Upload compiled program (all deploy files)
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: clawfarm-masterpool-so
+          name: clawfarm-masterpool-deploy
           path: target/deploy/
           retention-days: 30
 
       - name: Display Program ID
         if: success()
         run: |
-          echo "Program ID (from keypair):"
-          cat target/deploy/clawfarm_masterpool-keypair.json | jq -r '.pubkey'
-          echo ""
-          echo "Program ID (from program):"
-          solana address -k target/deploy/clawfarm_masterpool-keypair.json
+          if [ -f target/deploy/clawfarm_masterpool-keypair.json ]; then
+            echo "Program ID:"
+            cat target/deploy/clawfarm_masterpool-keypair.json | jq -r '.pubkey'
+          else
+            echo "Keypair not found, checking other locations..."
+            find . -name "*keypair*.json" 2>/dev/null
+          fi
