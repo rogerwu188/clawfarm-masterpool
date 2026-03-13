@@ -26,8 +26,16 @@ jobs:
       - name: Install Node.js dependencies
         run: npm install
 
+      - name: Generate program keypair if not exists
+        run: |
+          if [ ! -f target/deploy/clawfarm_masterpool-keypair.json ]; then
+            solana-keygen new --no-passphrase -o target/deploy/clawfarm_masterpool-keypair.json
+          fi
+
       - name: Build Anchor program
         run: anchor build
+        env:
+          SOLANA_VERSION: stable
 
       - name: Upload compiled program
         uses: actions/upload-artifact@v4
