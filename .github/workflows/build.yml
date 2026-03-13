@@ -37,34 +37,8 @@ jobs:
 
       - name: Setup Solana config for file-based wallet
         run: |
-          # Create a temporary file-based wallet for build
           solana-keygen new --no-passphrase -o /tmp/wallet.json
           solana config set --keypair /tmp/wallet.json
-
-      - name: Restore Anchor.toml
-        run: |
-          # Restore original Anchor.toml
-          cat > Anchor.toml << 'EOF'
-[features]
-seeds = false
-skip-lint = false
-
-[programs.localnet]
-clawfarm_masterpool = "CF1AwFarm111111111111111111111111111111111"
-
-[programs.devnet]
-clawfarm_masterpool = "CF1AwFarm111111111111111111111111111111111"
-
-[registry]
-url = "https://api.apr.dev"
-
-[provider]
-cluster = "devnet"
-wallet = "/tmp/wallet.json"
-
-[scripts]
-test = "npx ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"
-EOF
 
       - name: Clean and rebuild
         run: |
@@ -73,17 +47,13 @@ EOF
 
       - name: List build outputs
         run: |
-          echo "=== Deploy directory ==="
           ls -la target/deploy/
-          echo ""
-          echo "=== .so files ==="
-          find target -name "*.so" -ls
+          find target -name "*.so"
 
       - name: Upload artifacts
         if: success()
         uses: actions/upload-artifact@v4
         with:
           name: clawfarm-masterpool-all
-          path: |
-            target/
+          path: target/
           retention-days: 30
