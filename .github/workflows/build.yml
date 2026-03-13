@@ -37,18 +37,22 @@ jobs:
 
       - name: Generate program keypair
         run: |
+          mkdir -p target/deploy
           solana-keygen new --no-passphrase -o ./target/deploy/clawfarm_masterpool-keypair.json
 
       - name: Build Anchor program
         run: anchor build
 
-      - name: Show build output
+      - name: Find and list ALL build outputs
         run: |
-          echo "=== Files in target/deploy ==="
-          ls -la target/deploy/
+          echo "=== All files in target ==="
+          find target -type f 2>/dev/null | head -30
           echo ""
-          echo "=== .so file check ==="
-          ls -la target/deploy/*.so 2>/dev/null || echo "No .so files found"
+          echo "=== .so files ==="
+          find . -name "*.so" 2>/dev/null
+          echo ""
+          echo "=== Keypair ==="
+          cat target/deploy/clawfarm_masterpool-keypair.json
 
       - name: Display Program ID
         run: |
@@ -56,12 +60,11 @@ jobs:
           echo "Program ID: $PROGRAM_ID"
           echo "$PROGRAM_ID" > program_id.txt
 
-      - name: Upload artifacts
+      - name: Upload ALL build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: clawfarm-masterpool-all
           path: |
-            target/deploy/*.so
-            target/deploy/*keypair*
+            target/
             program_id.txt
           retention-days: 30
