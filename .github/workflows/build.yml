@@ -36,34 +36,27 @@ jobs:
       - name: Install Node.js dependencies
         run: npm install
 
-      - name: Generate program keypair if not exists
-        run: |
-          mkdir -p target/deploy
-          if [ ! -f target/deploy/clawfarm_masterpool-keypair.json ]; then
-            solana-keygen new --no-passphrase -o target/deploy/clawfarm_masterpool-keypair.json
-          fi
-
       - name: Build Anchor program
-        run: anchor build 2>&1
+        run: anchor build
+
+      - name: List build output
+        run: |
+          ls -la target/deploy/
+          ls -la target/idl/
 
       - name: Upload compiled program
         if: success()
         uses: actions/upload-artifact@v4
         with:
           name: clawfarm-masterpool-so
-          path: target/deploy/clawfarm_masterpool.so
-          retention-days: 30
-
-      - name: Upload IDL
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: clawfarm-masterpool-idl
-          path: target/idl/clawfarm_masterpool.json
+          path: target/deploy/
           retention-days: 30
 
       - name: Display Program ID
         if: success()
         run: |
-          echo "Program ID:"
-          cat target/deploy/clawfarm_masterpool.so-keypair.json | jq -r '.pubkey'
+          echo "Program ID (from keypair):"
+          cat target/deploy/clawfarm_masterpool-keypair.json | jq -r '.pubkey'
+          echo ""
+          echo "Program ID (from program):"
+          solana address -k target/deploy/clawfarm_masterpool-keypair.json
