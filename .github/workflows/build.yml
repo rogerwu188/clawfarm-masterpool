@@ -33,23 +33,12 @@ jobs:
       - name: Build
         run: anchor build
 
-      - name: Debug output
+      - name: Print Program ID
         run: |
-          echo "=== Contents of target ==="
-          ls -la target/ 2>/dev/null || echo "No target dir"
-          echo ""
-          echo "=== Contents of target/deploy ==="
-          ls -la target/deploy/ 2>/dev/null || echo "No deploy dir"
-          echo ""
-          echo "=== Find .so files ==="
-          find . -name "*.so" 2>/dev/null || echo "No .so files"
+          cat target/deploy/clawfarm_masterpool.so-keypair.json | jq -r '.pubkey'
 
-      - name: Upload build artifacts
+      - name: Upload all artifacts
         uses: actions/upload-artifact@v4
         with:
           name: clawfarm-program
-          path: |
-            target/deploy/*.so
-            target/deploy/*keypair*
-            target/idl/
-          if-no-files-found: warn
+          path: target/
