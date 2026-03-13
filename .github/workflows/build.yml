@@ -42,17 +42,26 @@ jobs:
       - name: Build Anchor program
         run: anchor build
 
+      - name: Show build output
+        run: |
+          echo "=== Files in target/deploy ==="
+          ls -la target/deploy/
+          echo ""
+          echo "=== .so file check ==="
+          ls -la target/deploy/*.so 2>/dev/null || echo "No .so files found"
+
       - name: Display Program ID
         run: |
           PROGRAM_ID=$(solana address -k ./target/deploy/clawfarm_masterpool-keypair.json)
           echo "Program ID: $PROGRAM_ID"
           echo "$PROGRAM_ID" > program_id.txt
 
-      - name: Upload all artifacts
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: clawfarm-masterpool-all
           path: |
-            ./target/deploy/
-            ./program_id.txt
+            target/deploy/*.so
+            target/deploy/*keypair*
+            program_id.txt
           retention-days: 30
