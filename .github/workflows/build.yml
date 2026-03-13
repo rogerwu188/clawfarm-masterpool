@@ -1,4 +1,4 @@
-name: Build Anchor Program
+name: Build and Deploy
 
 on:
   push:
@@ -11,49 +11,37 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust
-        run: |
-          rustup update stable
-          rustup default stable
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
 
       - name: Install Solana CLI
         run: |
-          sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)"
-
-      - name: Add to PATH
-        run: echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
+          sh -c "$(curl -sSfL 'https://release.anza.xyz/stable/install')"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
 
       - name: Install Anchor
-        run: |
-          npm install -g @coral-xyz/anchor-cli@latest
+        run: npm install -g @coral-xyz/anchor-cli
 
-      - name: Show versions
-        run: |
-          solana --version
-          anchor --version
-
-      - name: Install Node.js dependencies
+      - name: Install dependencies
         run: npm install
 
-      - name: Setup Solana config for file-based wallet
-        run: |
-          solana-keygen new --no-passphrase -o /tmp/wallet.json
-          solana config set --keypair /tmp/wallet.json
+      - name: Build
+        run: anchor build
+        env:
+          SOLANA_VERSION: stable
 
-      - name: Clean and rebuild
+      - name: Show output
         run: |
-          rm -rf target
-          anchor build
-
-      - name: List build outputs
-        run: |
-          ls -la target/deploy/
-          find target -name "*.so"
+          ls -la target/deploy/ 2>/dev/null || echo "No deploy dir"
 
       - name: Upload artifacts
-        if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: clawfarm-masterpool-all
+          name: build-output
           path: target/
-          retention-days: 30
+          retention-days: 7
