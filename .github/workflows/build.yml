@@ -19,10 +19,11 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Install Solana CLI v1.18.24
+      - name: Install Solana CLI
         run: |
-          curl -sSfL https://github.com/anza-xyz/agave/releases/download/v1.18.24/agave-x86_64-unknown-linux-gnu.tar.bz2 -o /tmp/agave.tar.bz2
-          tar -xjf /tmp/agave.tar.bz2 -C "$HOME/.local/share/solana/install/"
+          SOLANA_VERSION="1.18.24"
+          curl -sSfL "https://github.com/solana-labs/solana/releases/download/v${SOLANA_VERSION}/solana-release-x86_64-unknown-linux-gnu.tar.bz2" -o /tmp/solana.tar.bz2
+          tar -xjf /tmp/solana.tar.bz2 -C "$HOME/.local/share/solana/install/"
           echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
           solana --version
 
@@ -36,12 +37,6 @@ jobs:
 
       - name: Build
         run: anchor build
-
-      - name: Check outputs
-        run: |
-          echo "=== Deploy dir ==="
-          ls -la target/deploy/ 2>/dev/null || echo "No deploy"
-          find . -name "*.so" -type f 2>/dev/null || echo "No .so"
 
       - name: Upload artifacts
         if: success()
