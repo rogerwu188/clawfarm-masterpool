@@ -23,21 +23,32 @@ jobs:
       - name: Add to PATH
         run: echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
 
+      - name: Show Solana version
+        run: solana --version
+
       - name: Install Node.js dependencies
         run: npm install
 
+      - name: Show working directory
+        run: |
+          pwd
+          ls -la
+
       - name: Generate program keypair if not exists
         run: |
+          mkdir -p target/deploy
           if [ ! -f target/deploy/clawfarm_masterpool-keypair.json ]; then
             solana-keygen new --no-passphrase -o target/deploy/clawfarm_masterpool-keypair.json
           fi
+          ls -la target/deploy/
 
       - name: Build Anchor program
-        run: anchor build
+        run: anchor build 2>&1
         env:
-          SOLANA_VERSION: stable
+          RUST_BACKTRACE: "1"
 
       - name: Upload compiled program
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: clawfarm-masterpool-so
@@ -45,6 +56,7 @@ jobs:
           retention-days: 30
 
       - name: Upload IDL
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: clawfarm-masterpool-idl
@@ -52,6 +64,7 @@ jobs:
           retention-days: 30
 
       - name: Display Program ID
+        if: success()
         run: |
           echo "Program ID:"
           cat target/deploy/clawfarm_masterpool.so-keypair.json | jq -r '.pubkey'
