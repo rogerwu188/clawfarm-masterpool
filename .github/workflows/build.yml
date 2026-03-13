@@ -17,38 +17,49 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
 
       - name: Install Solana CLI
         run: |
           sh -c "$(curl -sSfL 'https://release.anza.xyz/stable/install')"
           echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
+          solana --version
 
       - name: Install Anchor CLI
         run: |
           npm install -g @coral-xyz/anchor-cli
           anchor --version
 
-      - name: Install dependencies
+      - name: Show project structure
+        run: |
+          ls -la
+          cat package.json
+          cat Anchor.toml
+
+      - name: Install npm deps
         run: npm install
 
-      - name: Remove cached builds
+      - name: Build
         run: |
-          rm -rf target
+          echo "Running anchor build..."
+          anchor build 2>&1 || echo "Build failed with code $?"
+          echo "=== After build ==="
+          ls -la
 
-      - name: Build program
-        run: anchor build
-
-      - name: List output files
+      - name: Check for .so
         run: |
-          echo "=== Deploy folder ==="
-          ls -la target/deploy/ 2>/dev/null || echo "No deploy"
+          echo "=== Looking for .so files ==="
+          find . -name "*.so" -type f 2>/dev/null || echo "No .so found"
           echo ""
-          echo "=== .so files ==="
-          find . -name "*.so" 2>/dev/null || echo "No .so"
+          echo "=== Target directory ==="
+          ls -la target/ 2>/dev/null || echo "No target dir"
 
       - name: Upload artifacts
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: program-artifacts
-          path: target/
+          path: |
+            target/
+            Cargo.toml
+            Anchor.toml
