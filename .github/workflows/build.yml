@@ -17,30 +17,28 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '20'
 
       - name: Install Solana CLI
         run: |
-          SOLANA_VERSION="1.18.24"
-          curl -sSfL "https://github.com/solana-labs/solana/releases/download/v${SOLANA_VERSION}/solana-release-x86_64-unknown-linux-gnu.tar.bz2" -o /tmp/solana.tar.bz2
-          tar -xjf /tmp/solana.tar.bz2 -C "$HOME/.local/share/solana/install/"
+          sh -c "$(curl -sSfL 'https://release.anza.xyz/stable/install')"
           echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
-          solana --version
 
       - name: Install Anchor CLI
-        run: |
-          npm install -g @coral-xyz/anchor-cli
-          anchor --version
+        run: npm install -g @coral-xyz/anchor-cli
 
-      - name: Install npm deps
+      - name: Install dependencies
         run: npm install
 
       - name: Build
         run: anchor build
 
-      - name: Upload artifacts
-        if: success()
+      - name: List deploy files
+        run: |
+          ls -la target/deploy/ 2>/dev/null || echo "No deploy dir"
+
+      - name: Upload deploy artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: program-artifacts
-          path: target/
+          name: clawfarm-program
+          path: target/deploy/
