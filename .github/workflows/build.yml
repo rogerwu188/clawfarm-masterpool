@@ -33,12 +33,16 @@ jobs:
       - name: Build
         run: anchor build
 
-      - name: List deploy files
+      - name: List ALL files in target
         run: |
-          ls -la target/deploy/ 2>/dev/null || echo "No deploy dir"
+          echo "=== All files ==="
+          find target -type f 2>/dev/null || echo "No target"
+          echo ""
+          echo "=== IDL ==="
+          ls -la target/idl/ 2>/dev/null || echo "No idl"
 
-      - name: Upload deploy artifacts
+      - name: Upload all artifacts
         uses: actions/upload-artifact@v4
         with:
           name: clawfarm-program
-          path: target/deploy/
+          path: target/
