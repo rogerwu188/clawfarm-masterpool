@@ -15,5 +15,8 @@ url = "https://api.apr.dev"
 cluster = "devnet"
 wallet = "~/.config/solana/id.json"
 
+[anchor-build]
+out = "target/deploy"
+
 [scripts]
 test = "npx ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"

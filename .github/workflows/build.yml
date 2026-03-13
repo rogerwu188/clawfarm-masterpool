@@ -33,24 +33,16 @@ jobs:
       - name: Build
         run: anchor build
 
-      - name: Generate keypair
+      - name: Show all files
         run: |
-          solana-keygen new --no-passphrase -o deploy-keypair.json
+          echo "=== Target directory ==="
+          find target -type f 2>/dev/null | head -30
+          echo ""
+          echo "=== Deploy directory ==="
+          ls -la target/deploy/ 2>/dev/null || echo "No deploy dir"
 
-      - name: Show keypair
-        run: cat deploy-keypair.json
-
-      - name: Show Program ID
-        run: solana-keygen pubkey deploy-keypair.json
-
-      - name: Upload keypair
+      - name: Upload all artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: deploy-keypair
-          path: deploy-keypair.json
-
-      - name: Upload IDL
-        uses: actions/upload-artifact@v4
-        with:
-          name: program-idl
-          path: target/idl/
+          name: all-artifacts
+          path: target/
