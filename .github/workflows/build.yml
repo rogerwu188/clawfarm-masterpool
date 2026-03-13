@@ -35,40 +35,55 @@ jobs:
       - name: Install Node.js dependencies
         run: npm install
 
-      - name: Remove devnet program config to avoid caching issue
+      - name: Setup Solana config for file-based wallet
         run: |
-          cat Anchor.toml
-          # Comment out devnet program to force fresh build
-          sed -i 's/^clawfarm_masterpool/ #clawfarm_masterpool/' Anchor.toml
+          # Create a temporary file-based wallet for build
+          solana-keygen new --no-passphrase -o /tmp/wallet.json
+          solana config set --keypair /tmp/wallet.json
 
-      - name: Generate program keypair
+      - name: Restore Anchor.toml
         run: |
-          mkdir -p target/deploy
-          solana-keygen new --no-passphrase -o ./target/deploy/clawfarm_masterpool-keypair.json
+          # Restore original Anchor.toml
+          cat > Anchor.toml << 'EOF'
+[features]
+seeds = false
+skip-lint = false
+
+[programs.localnet]
+clawfarm_masterpool = "CF1AwFarm111111111111111111111111111111111"
+
+[programs.devnet]
+clawfarm_masterpool = "CF1AwFarm111111111111111111111111111111111"
+
+[registry]
+url = "https://api.apr.dev"
+
+[provider]
+cluster = "devnet"
+wallet = "/tmp/wallet.json"
+
+[scripts]
+test = "npx ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"
+EOF
 
       - name: Clean and rebuild
         run: |
           rm -rf target
           anchor build
 
-      - name: List ALL files
+      - name: List build outputs
         run: |
-          echo "=== All files ==="
-          find . -type f -name "*.so" 2>/dev/null
-          find . -type f -name "*keypair*" 2>/dev/null
-          ls -laR target/ 2>/dev/null | head -50
+          echo "=== Deploy directory ==="
+          ls -la target/deploy/
+          echo ""
+          echo "=== .so files ==="
+          find target -name "*.so" -ls
 
-      - name: Display Program ID
-        run: |
-          PROGRAM_ID=$(solana address -k ./target/deploy/clawfarm_masterpool-keypair.json)
-          echo "Program ID: $PROGRAM_ID"
-          echo "$PROGRAM_ID" > program_id.txt
-
-      - name: Upload ALL build artifacts
+      - name: Upload artifacts
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: clawfarm-masterpool-all
           path: |
             target/
-            program_id.txt
           retention-days: 30
