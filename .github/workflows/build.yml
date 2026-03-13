@@ -25,24 +25,39 @@ jobs:
           echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
 
       - name: Install Anchor
-        run: npm install -g @coral-xyz/anchor-cli
+        run: |
+          npm install -g @coral-xyz/anchor-cli
+          anchor --version
 
       - name: Install dependencies
-        run: npm install
+        run: |
+          npm install
+          ls -la
+
+      - name: Clean previous build
+        run: |
+          rm -rf target/
+          rm -rf node_modules/.cache/
 
       - name: Build
-        run: anchor build
-
-      - name: Show all files
         run: |
-          echo "=== Target directory ==="
-          find target -type f 2>/dev/null | head -30
-          echo ""
-          echo "=== Deploy directory ==="
-          ls -la target/deploy/ 2>/dev/null || echo "No deploy dir"
+          anchor build 2>&1
+          echo "=== Build complete ==="
 
-      - name: Upload all artifacts
+      - name: List deploy files
+        run: |
+          echo "=== Checking target/deploy ==="
+          ls -la target/deploy/ 2>/dev/null || echo "No deploy dir"
+          echo ""
+          echo "=== Finding .so files ==="
+          find . -name "*.so" 2>/dev/null || echo "No .so found"
+
+      - name: Upload deploy artifacts
         uses: actions/upload-artifact@v4
+        if: success()
         with:
-          name: all-artifacts
-          path: target/
+          name: deploy-artifacts
+          path: |
+            target/deploy/
+            target/idl/
+          retention-days: 1
