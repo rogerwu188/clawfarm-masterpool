@@ -13,6 +13,8 @@ jobs:
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -24,22 +26,27 @@ jobs:
           sh -c "$(curl -sSfL 'https://release.anza.xyz/stable/install')"
           echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
 
+      - name: Install LLVM
+        run: sudo apt-get install -y llvm
+
+      - name: Install BPF dependencies
+        run: |
+          cargo install cargo-bpf-clang 2>/dev/null || true
+
       - name: Install Anchor
         run: npm install -g @coral-xyz/anchor-cli
 
       - name: Install dependencies
         run: npm install
 
-      - name: Generate keypair
+      - name: Build with BPF
         run: |
-          mkdir -p target/deploy
-          solana-keygen new --no-passphrase -o target/deploy/clawfarm_masterpool-keypair.json
+          anchor build --bpfout target/deploy/clawfarm_masterpool.so 2>&1 || anchor build 2>&1
 
-      - name: Build with verbose
+      - name: List all files
         run: |
-          anchor build 2>&1
-          echo "=== Files after build ==="
-          find target -type f -name "*.so" -o -name "*keypair*" 2>/dev/null
+          find . -type f \( -name "*.so" -o -name "*keypair*" \) 2>/dev/null
+          ls -laR target/ 2>/dev/null | head -50
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
