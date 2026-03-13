@@ -44,7 +44,7 @@ jobs:
 
       - name: Print Program ID
         run: |
-          cat target/deploy/clawfarm_masterpool-keypair.json | jq -r '.pubkey'
+          solana-keygen pubkey target/deploy/clawfarm_masterpool-keypair.json
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
