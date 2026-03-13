@@ -23,16 +23,18 @@ jobs:
       - name: Add to PATH
         run: echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
 
-      - name: Show Solana version
-        run: solana --version
+      - name: Install Anchor
+        run: |
+          npm install -g @coral-xyz/anchor-cli@latest
+
+      - name: Show versions
+        run: |
+          solana --version
+          anchor --version
+          rustc --version
 
       - name: Install Node.js dependencies
         run: npm install
-
-      - name: Show working directory
-        run: |
-          pwd
-          ls -la
 
       - name: Generate program keypair if not exists
         run: |
@@ -40,12 +42,9 @@ jobs:
           if [ ! -f target/deploy/clawfarm_masterpool-keypair.json ]; then
             solana-keygen new --no-passphrase -o target/deploy/clawfarm_masterpool-keypair.json
           fi
-          ls -la target/deploy/
 
       - name: Build Anchor program
         run: anchor build 2>&1
-        env:
-          RUST_BACKTRACE: "1"
 
       - name: Upload compiled program
         if: success()
