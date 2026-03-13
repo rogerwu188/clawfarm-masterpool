@@ -1,0 +1,49 @@
+name: Build Anchor Program
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        run: |
+          rustup update stable
+          rustup default stable
+
+      - name: Install Solana CLI
+        run: |
+          sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)"
+
+      - name: Add to PATH
+        run: echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
+
+      - name: Install Node.js dependencies
+        run: npm install
+
+      - name: Build Anchor program
+        run: anchor build
+
+      - name: Upload compiled program
+        uses: actions/upload-artifact@v4
+        with:
+          name: clawfarm-masterpool-so
+          path: target/deploy/clawfarm_masterpool.so
+          retention-days: 30
+
+      - name: Upload IDL
+        uses: actions/upload-artifact@v4
+        with:
+          name: clawfarm-masterpool-idl
+          path: target/idl/clawfarm_masterpool.json
+          retention-days: 30
+
+      - name: Display Program ID
+        run: |
+          echo "Program ID:"
+          cat target/deploy/clawfarm_masterpool.so-keypair.json | jq -r '.pubkey'
