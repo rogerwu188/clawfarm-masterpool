@@ -19,9 +19,10 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Install Solana CLI
+      - name: Install Solana CLI v1.18.24
         run: |
-          sh -c "$(curl -sSfL 'https://release.anza.xyz/stable/install')"
+          curl -sSfL https://github.com/anza-xyz/agave/releases/download/v1.18.24/agave-x86_64-unknown-linux-gnu.tar.bz2 -o /tmp/agave.tar.bz2
+          tar -xjf /tmp/agave.tar.bz2 -C "$HOME/.local/share/solana/install/"
           echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
           solana --version
 
@@ -30,36 +31,21 @@ jobs:
           npm install -g @coral-xyz/anchor-cli
           anchor --version
 
-      - name: Show project structure
-        run: |
-          ls -la
-          cat package.json
-          cat Anchor.toml
-
       - name: Install npm deps
         run: npm install
 
       - name: Build
-        run: |
-          echo "Running anchor build..."
-          anchor build 2>&1 || echo "Build failed with code $?"
-          echo "=== After build ==="
-          ls -la
+        run: anchor build
 
-      - name: Check for .so
+      - name: Check outputs
         run: |
-          echo "=== Looking for .so files ==="
-          find . -name "*.so" -type f 2>/dev/null || echo "No .so found"
-          echo ""
-          echo "=== Target directory ==="
-          ls -la target/ 2>/dev/null || echo "No target dir"
+          echo "=== Deploy dir ==="
+          ls -la target/deploy/ 2>/dev/null || echo "No deploy"
+          find . -name "*.so" -type f 2>/dev/null || echo "No .so"
 
       - name: Upload artifacts
         if: success()
         uses: actions/upload-artifact@v4
         with:
           name: program-artifacts
-          path: |
-            target/
-            Cargo.toml
-            Anchor.toml
+          path: target/
