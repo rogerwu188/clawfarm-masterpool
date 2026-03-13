@@ -32,16 +32,24 @@ jobs:
 
       - name: Build
         run: anchor build
-        env:
-          SOLANA_VERSION: stable
 
-      - name: Show output
+      - name: Debug output
         run: |
+          echo "=== Contents of target ==="
+          ls -la target/ 2>/dev/null || echo "No target dir"
+          echo ""
+          echo "=== Contents of target/deploy ==="
           ls -la target/deploy/ 2>/dev/null || echo "No deploy dir"
+          echo ""
+          echo "=== Find .so files ==="
+          find . -name "*.so" 2>/dev/null || echo "No .so files"
 
-      - name: Upload artifacts
+      - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: build-output
-          path: target/
-          retention-days: 7
+          name: clawfarm-program
+          path: |
+            target/deploy/*.so
+            target/deploy/*keypair*
+            target/idl/
+          if-no-files-found: warn
