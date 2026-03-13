@@ -35,21 +35,28 @@ jobs:
       - name: Install Node.js dependencies
         run: npm install
 
+      - name: Remove devnet program config to avoid caching issue
+        run: |
+          cat Anchor.toml
+          # Comment out devnet program to force fresh build
+          sed -i 's/^clawfarm_masterpool/ #clawfarm_masterpool/' Anchor.toml
+
       - name: Generate program keypair
         run: |
           mkdir -p target/deploy
           solana-keygen new --no-passphrase -o ./target/deploy/clawfarm_masterpool-keypair.json
 
-      - name: Build Anchor program with BPF
-        run: anchor build --bpf
-
-      - name: List deploy output
+      - name: Clean and rebuild
         run: |
-          echo "=== Deploy directory ==="
-          ls -la target/deploy/
-          echo ""
-          echo "=== .so files ==="
-          find target -name "*.so" -ls
+          rm -rf target
+          anchor build
+
+      - name: List ALL files
+        run: |
+          echo "=== All files ==="
+          find . -type f -name "*.so" 2>/dev/null
+          find . -type f -name "*keypair*" 2>/dev/null
+          ls -laR target/ 2>/dev/null | head -50
 
       - name: Display Program ID
         run: |
