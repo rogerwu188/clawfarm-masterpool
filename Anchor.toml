@@ -3,10 +3,10 @@ seeds = false
 skip-lint = false
 
 [programs.localnet]
-clawfarm_masterpool = "CF1AwFarm111111111111111111111111111111111"
+clawfarm_masterpool = "3sk574EAo5fhTCaj9hyDou4pgLBV7TgTSWZPyNeA8TLM"
 
 [programs.devnet]
-clawfarm_masterpool = "CF1AwFarm111111111111111111111111111111111"
+clawfarm_masterpool = "3sk574EAo5fhTCaj9hyDou4pgLBV7TgTSWZPyNeA8TLM"
 
 [registry]
 url = "https://api.apr.dev"

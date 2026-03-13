@@ -35,16 +35,11 @@ jobs:
           mkdir -p target/deploy
           solana-keygen new --no-passphrase -o target/deploy/clawfarm_masterpool-keypair.json
 
-      - name: Build
-        run: anchor build
-
-      - name: Show files
+      - name: Build with verbose
         run: |
-          ls -la target/deploy/
-
-      - name: Print Program ID
-        run: |
-          solana-keygen pubkey target/deploy/clawfarm_masterpool-keypair.json
+          anchor build 2>&1
+          echo "=== Files after build ==="
+          find target -type f -name "*.so" -o -name "*keypair*" 2>/dev/null
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
