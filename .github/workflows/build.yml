@@ -11,20 +11,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Disable caching
-        uses: actions/cache/disable@v4
-
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
-        with:
-          cache: false
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: package-lock.json
 
       - name: Install Solana CLI
         run: |
@@ -42,12 +35,9 @@ jobs:
       - name: Remove cached builds
         run: |
           rm -rf target
-          rm -rf ~/.cargo/registry/cache
-          rm -rf ~/.cargo/git/db
 
       - name: Build program
-        run: |
-          anchor build --no-cache 2>&1 || anchor build 2>&1
+        run: anchor build
 
       - name: List output files
         run: |
@@ -56,9 +46,6 @@ jobs:
           echo ""
           echo "=== .so files ==="
           find . -name "*.so" 2>/dev/null || echo "No .so"
-          echo ""
-          echo "=== All target files ==="
-          find target -type f 2>/dev/null | head -20
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
