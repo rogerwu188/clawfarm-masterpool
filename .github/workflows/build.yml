@@ -23,41 +23,42 @@ jobs:
         run: |
           sh -c "$(curl -sSfL 'https://release.anza.xyz/stable/install')"
           echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
+          solana --version
 
-      - name: Install Anchor
+      - name: Install Cargo BPF
         run: |
-          npm install -g @coral-xyz/anchor-cli
-          anchor --version
+          cargo install cargo-bpf-clang 2>&1 || true
+          cargo-bpf --version 2>&1 || true
 
-      - name: Install dependencies
+      - name: Install npm dependencies
         run: |
           npm install
           ls -la
 
-      - name: Clean previous build
+      - name: Build with cargo-bpf
+        working-directory: .
         run: |
-          rm -rf target/
-          rm -rf node_modules/.cache/
+          cargo build-bpf --manifest-path Cargo.toml -o target/deploy/clawfarm_masterpool.so 2>&1 || echo "cargo-bpf failed, trying anchor"
+          if [ ! -f target/deploy/clawfarm_masterpool.so ]; then
+            anchor build 2>&1
+          fi
 
-      - name: Build
+      - name: List build outputs
         run: |
-          anchor build 2>&1
-          echo "=== Build complete ==="
-
-      - name: List deploy files
-        run: |
-          echo "=== Checking target/deploy ==="
-          ls -la target/deploy/ 2>/dev/null || echo "No deploy dir"
+          echo "=== All files in target ==="
+          find target -type f 2>/dev/null | head -30
           echo ""
-          echo "=== Finding .so files ==="
-          find . -name "*.so" 2>/dev/null || echo "No .so found"
+          echo "=== .so files ==="
+          find . -name "*.so" 2>/dev/null
 
-      - name: Upload deploy artifacts
+      - name: Create artifact bundle
+        run: |
+          mkdir -p artifact-bundle
+          cp -r target/ artifact-bundle/ 2>/dev/null || true
+          ls -la artifact-bundle/
+
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
-        if: success()
         with:
-          name: deploy-artifacts
-          path: |
-            target/deploy/
-            target/idl/
-          retention-days: 1
+          name: clawfarm-build
+          path: artifact-bundle/
