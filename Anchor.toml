@@ -1,3 +1,8 @@
+[toolchain]
+anchor_version = "0.32.1"
+solana_version = "3.1.12"
+package_manager = "yarn"
+
 [features]
 seeds = false
 skip-lint = false
@@ -12,7 +17,7 @@ clawfarm_masterpool = "3sk574EAo5fhTCaj9hyDou4pgLBV7TgTSWZPyNeA8TLM"
 url = "https://api.apr.dev"
 
 [provider]
-cluster = "devnet"
+cluster = "localnet"
 wallet = "~/.config/solana/id.json"
 
 [anchor-build]

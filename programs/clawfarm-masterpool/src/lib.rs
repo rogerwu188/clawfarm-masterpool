@@ -1,14 +1,17 @@
+#![allow(unexpected_cfgs)]
+
 use anchor_lang::prelude::*;
-use anchor_spl::token::{self, Mint, Token, TokenAccount, MintTo, Transfer, SetAuthority};
+use anchor_spl::token::{self, Mint, MintTo, SetAuthority, Token, TokenAccount};
 use anchor_spl::token::spl_token::instruction::AuthorityType;
 
-declare_id!("CF1AwFarm111111111111111111111111111111111");
+declare_id!("3sk574EAo5fhTCaj9hyDou4pgLBV7TgTSWZPyNeA8TLM");
 
 /// Seeds for PDA derivation
 pub const CONFIG_SEED: &[u8] = b"config";
 pub const MASTER_POOL_VAULT_SEED: &[u8] = b"master_pool_vault";
 pub const TREASURY_VAULT_SEED: &[u8] = b"treasury_vault";
 pub const POOL_AUTHORITY_SEED: &[u8] = b"pool_authority";
+pub const SETTLEMENT_SEED: &[u8] = b"settlement";
 
 /// Fixed protocol parameters
 pub const COMPUTE_POOL_BPS: u16 = 5000;    // 50%
@@ -204,7 +207,7 @@ pub mod clawfarm_masterpool {
 
         let bump = ctx.bumps.pool_authority;
         let seeds = &[POOL_AUTHORITY_SEED, &[bump]];
-        let signer_seeds = &[&seeds[..]];
+        let _signer_seeds = &[&seeds[..]];
 
         let total: u64 = amounts.iter().sum();
         // Verify total doesn't exceed 50% of epoch emission
@@ -531,7 +534,7 @@ pub struct SubmitSettlement<'info> {
         init,
         payer = submitter,
         space = 8 + std::mem::size_of::<EpochSettlement>(),
-        seeds = [b"settlement", &(config.current_epoch + 1).to_le_bytes()],
+        seeds = [SETTLEMENT_SEED, &(config.current_epoch + 1).to_le_bytes()],
         bump,
     )]
     pub settlement: Account<'info, EpochSettlement>,

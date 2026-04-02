@@ -5,7 +5,7 @@ description = "ClawFarm Master Pool - Program-controlled vault for Genesis emiss
 edition = "2021"
 
 [lib]
-crate-type = ["cdylib", "lib"]
+crate-type = ["cdylib", "rlib"]
 name = "clawfarm_masterpool"
 
 [features]
@@ -14,7 +14,8 @@ no-idl = []
 no-log-ix-name = []
 cpi = ["no-entrypoint"]
 default = []
+idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
 
 [dependencies]
-anchor-lang = "0.30.1"
-anchor-spl = "0.30.1"
+anchor-lang = "0.32.1"
+anchor-spl = "0.32.1"
