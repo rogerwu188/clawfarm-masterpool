@@ -8,9 +8,11 @@ seeds = false
 skip-lint = false
 
 [programs.localnet]
+clawfarm_attestation = "52WWsrQQcpAJn4cjSxMe4XGBvgGzPXa9gjAqUSfryAx2"
 clawfarm_masterpool = "3sk574EAo5fhTCaj9hyDou4pgLBV7TgTSWZPyNeA8TLM"
 
 [programs.devnet]
+clawfarm_attestation = "52WWsrQQcpAJn4cjSxMe4XGBvgGzPXa9gjAqUSfryAx2"
 clawfarm_masterpool = "3sk574EAo5fhTCaj9hyDou4pgLBV7TgTSWZPyNeA8TLM"
 
 [registry]
