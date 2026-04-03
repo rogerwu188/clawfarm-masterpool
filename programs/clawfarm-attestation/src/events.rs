@@ -58,13 +58,6 @@ pub struct ChallengeOpened {
 }
 
 #[event]
-pub struct ChallengeResponded {
-    pub request_nonce: String,
-    pub challenger: Pubkey,
-    pub challenge_type: u8,
-}
-
-#[event]
 pub struct ChallengeResolved {
     pub request_nonce: String,
     pub challenger: Pubkey,

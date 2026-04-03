@@ -68,10 +68,9 @@ pub enum ReceiptStatus {
 #[repr(u8)]
 pub enum ChallengeStatus {
     Open = 0,
-    Responded = 1,
-    Accepted = 2,
-    Rejected = 3,
-    Expired = 4,
+    Accepted = 1,
+    Rejected = 2,
+    Expired = 3,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -14,17 +14,14 @@ pub fn initialize_config(
     pause_authority: Pubkey,
     challenge_resolver: Pubkey,
     challenge_window_seconds: i64,
-    response_window_seconds: i64,
 ) -> Result<()> {
     require!(challenge_window_seconds > 0, ErrorCode::InvalidWindow);
-    require!(response_window_seconds > 0, ErrorCode::InvalidWindow);
 
     let config = &mut ctx.accounts.config;
     config.authority = authority;
     config.pause_authority = pause_authority;
     config.challenge_resolver = challenge_resolver;
     config.challenge_window_seconds = challenge_window_seconds;
-    config.response_window_seconds = response_window_seconds;
     config.receipt_count = 0;
     config.challenge_count = 0;
     config.is_paused = false;

@@ -142,7 +142,6 @@ authority: Pubkey
 pause_authority: Pubkey
 challenge_resolver: Pubkey
 challenge_window_seconds: i64
-response_window_seconds: i64
 receipt_count: u64
 challenge_count: u64
 is_paused: bool
@@ -154,8 +153,8 @@ reserved: [u8; 32]
 Account size:
 
 ```text
-INIT_SPACE = 163
-ALLOCATED  = 171
+INIT_SPACE = 155
+ALLOCATED  = 163
 ```
 
 ## `ProviderSigner`
@@ -220,9 +219,7 @@ receipt: Pubkey
 challenger: Pubkey
 challenge_type: u8
 evidence_hash: [u8; 32]
-response_hash: [u8; 32]
 opened_at: i64
-response_deadline: i64
 resolved_at: i64
 status: u8
 resolution_code: u8
@@ -232,8 +229,8 @@ bump: u8
 Account size:
 
 ```text
-INIT_SPACE = 156
-ALLOCATED  = 164
+INIT_SPACE = 116
+ALLOCATED  = 124
 ```
 
 ## Instruction ABI
@@ -247,7 +244,6 @@ authority: Pubkey
 pause_authority: Pubkey
 challenge_resolver: Pubkey
 challenge_window_seconds: i64
-response_window_seconds: i64
 ```
 
 Accounts:
@@ -388,31 +384,7 @@ Runtime rule:
 
 - receipt must be in `submitted` state
 
-## 7. `respond_challenge`
-
-Args:
-
-```rust
-request_nonce: String
-challenge_type: u8
-challenger: Pubkey
-response_hash: [u8; 32]
-```
-
-Accounts:
-
-```text
-[signer]           responder
-[]                 config
-[]                 receipt
-[writable]         challenge
-```
-
-Authorization:
-
-- `responder` must be `config.authority` or `config.challenge_resolver`
-
-## 8. `resolve_challenge`
+## 7. `resolve_challenge`
 
 Args:
 
@@ -444,7 +416,7 @@ signer_revoked                 -> receipt.slashed
 rejected                       -> receipt.finalized
 ```
 
-## 9. `finalize_receipt`
+## 8. `finalize_receipt`
 
 Args:
 
@@ -465,7 +437,7 @@ Runtime rule:
 - any caller may finalize once the challenge window is over and the receipt is
   still `submitted`
 
-## 10. `close_challenge`
+## 9. `close_challenge`
 
 Args:
 
@@ -487,7 +459,7 @@ Runtime rule:
 
 - challenge must already be terminal
 
-## 11. `close_receipt`
+## 10. `close_receipt`
 
 Args:
 
@@ -554,6 +526,5 @@ Current events:
 - `ReceiptFinalized`
 - `ReceiptClosed`
 - `ChallengeOpened`
-- `ChallengeResponded`
 - `ChallengeResolved`
 - `ChallengeClosed`

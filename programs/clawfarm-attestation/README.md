@@ -53,7 +53,6 @@ Fields:
 - `pause_authority`
 - `challenge_resolver`
 - `challenge_window_seconds`
-- `response_window_seconds`
 - `receipt_count`
 - `challenge_count`
 - `is_paused`
@@ -124,9 +123,7 @@ Fields:
 - `challenger`
 - `challenge_type`
 - `evidence_hash`
-- `response_hash`
 - `opened_at`
-- `response_deadline`
 - `resolved_at`
 - `status`
 - `resolution_code`
@@ -179,10 +176,9 @@ Phase 1 only accepts `ProviderReported`.
 ### `ChallengeStatus`
 
 - `0 = Open`
-- `1 = Responded`
-- `2 = Accepted`
-- `3 = Rejected`
-- `4 = Expired`
+- `1 = Accepted`
+- `2 = Rejected`
+- `3 = Expired`
 
 Note:
 
@@ -294,6 +290,39 @@ contract is designed to support the following operational flow.
   S3 object listing
 - the close flow should run only after terminal state is confirmed on-chain
 
+## Resolver Bot Flow
+
+The intended `challenge_resolver` is an automated Clawfarm bot rather than a
+human-operated wallet.
+
+Recommended loop:
+
+1. watch for newly opened `ChallengeOpened` events or poll challenge PDAs whose
+   status is still `Open`
+2. load the referenced receipt from the Clawfarm index and fetch the full
+   canonical receipt plus challenge evidence from off-chain storage
+3. reconstruct the dispute package off-chain and run Clawfarm-specific
+   verification logic for the requested `challenge_type`
+4. derive a single `resolution_code` from that verification result:
+   - `Rejected` if the challenge is not valid
+   - `Accepted` or `ReceiptInvalidated` if the receipt is invalid
+   - `SignerRevoked` if the signer should be slashed and revoked
+5. submit `resolve_challenge` from the bot-controlled `challenge_resolver`
+   authority
+6. after the receipt and challenge are terminal, run the rent-reclaim flow with
+   `close_challenge` and `close_receipt`
+
+Operational recommendations:
+
+- keep the resolver bot stateless on-chain; the durable source of truth should
+  remain the Clawfarm index plus the on-chain receipt/challenge PDAs
+- make off-chain verification deterministic and replayable so a later audit can
+  explain why a specific `resolution_code` was chosen
+- use idempotent job scheduling; the bot should safely retry if an RPC call or
+  evidence fetch fails midway
+- record the fetched evidence object version or content hash in the bot logs so
+  operators can trace the exact material used for a decision
+
 ## Rent Estimate
 
 The current implementation minimizes long-lived cost by keeping only `ReceiptLite`
@@ -302,7 +331,7 @@ on-chain and closing terminal accounts as soon as possible.
 ### Current account sizes
 
 - `Receipt` allocated size: `98 bytes`
-- `Challenge` allocated size: `164 bytes`
+- `Challenge` allocated size: `124 bytes`
 
 ### Rent formula
 
@@ -315,7 +344,7 @@ minimum_balance = (account_data_len + 128) * 6,960 lamports
 That gives:
 
 - per `Receipt`: `(98 + 128) * 6,960 = 1,572,960 lamports = 0.00157296 SOL`
-- per `Challenge`: `(164 + 128) * 6,960 = 2,032,320 lamports = 0.00203232 SOL`
+- per `Challenge`: `(124 + 128) * 6,960 = 1,753,920 lamports = 0.00175392 SOL`
 
 Important:
 
@@ -337,7 +366,7 @@ upper bound is:
 
 ```text
 receipt_plus_challenge_peak_sol
-  = daily_call_count * challenge_window_days * 0.00360528
+  = daily_call_count * challenge_window_days * 0.00332688
 ```
 
 ### Receipt-only peak collateral
@@ -356,9 +385,9 @@ Assuming every receipt also has one `Challenge` account alive at the same time:
 
 | Daily Calls | 1 Day Window | 3 Day Window | 7 Day Window |
 |---|---:|---:|---:|
-| 1,000 | 3.60528 SOL | 10.81584 SOL | 25.23696 SOL |
-| 10,000 | 36.0528 SOL | 108.1584 SOL | 252.3696 SOL |
-| 100,000 | 360.528 SOL | 1081.584 SOL | 2523.696 SOL |
+| 1,000 | 3.32688 SOL | 9.98064 SOL | 23.28816 SOL |
+| 10,000 | 33.2688 SOL | 99.8064 SOL | 232.8816 SOL |
+| 100,000 | 332.688 SOL | 998.064 SOL | 2328.816 SOL |
 
 ### Practical reading
 
@@ -375,7 +404,7 @@ Entry points live in [lib.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpoo
 
 Implementation:
 
-- [admin.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/programs/clawfarm-attestation/src/instructions/admin.rs#L10)
+- [admin.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/programs/clawfarm-attestation/src/instructions/admin.rs#L11)
 
 Signature:
 
@@ -386,7 +415,6 @@ pub fn initialize_config(
     pause_authority: Pubkey,
     challenge_resolver: Pubkey,
     challenge_window_seconds: i64,
-    response_window_seconds: i64,
 ) -> Result<()>
 ```
 
@@ -400,13 +428,12 @@ Input parameters:
 
 - `authority`: main governance authority
 - `pause_authority`: authority allowed to toggle pause
-- `challenge_resolver`: authority allowed to resolve disputes
+- `challenge_resolver`: resolver authority, typically an automated Clawfarm bot, allowed to resolve disputes
 - `challenge_window_seconds`: receipt challenge window, must be `> 0`
-- `response_window_seconds`: resolver response window, must be `> 0`
 
 Function flow:
 
-1. checks both window values are positive
+1. checks the challenge window value is positive
 2. initializes the config PDA
 3. writes all governance addresses and timing values
 4. zeroes `receipt_count` and `challenge_count`
@@ -424,7 +451,7 @@ Result:
 
 Implementation:
 
-- [admin.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/programs/clawfarm-attestation/src/instructions/admin.rs#L37)
+- [admin.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/programs/clawfarm-attestation/src/instructions/admin.rs#L40)
 
 Signature:
 
@@ -479,7 +506,7 @@ Result:
 
 Implementation:
 
-- [admin.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/programs/clawfarm-attestation/src/instructions/admin.rs#L83)
+- [admin.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/programs/clawfarm-attestation/src/instructions/admin.rs#L85)
 
 Signature:
 
@@ -514,7 +541,7 @@ Note:
 
 Implementation:
 
-- [admin.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/programs/clawfarm-attestation/src/instructions/admin.rs#L91)
+- [admin.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/programs/clawfarm-attestation/src/instructions/admin.rs#L93)
 
 Signature:
 
@@ -682,7 +709,7 @@ Function flow:
 3. checks the receipt is still `Submitted`
 4. checks current time is within the challenge window
 5. creates the `Challenge` PDA
-6. stores challenger, evidence hash, deadlines, and status
+6. stores challenger, evidence hash, timestamps, and status
 7. sets the receipt status to `Challenged`
 8. increments `config.challenge_count`
 9. emits `ChallengeOpened`
@@ -692,59 +719,11 @@ Result:
 - a dispute exists for this challenger and challenge type
 - the receipt is now in `Challenged` state
 
-## 7. `respond_challenge`
+## 7. `resolve_challenge`
 
 Implementation:
 
-- [challenge.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/programs/clawfarm-attestation/src/instructions/challenge.rs#L57)
-
-Signature:
-
-```rust
-pub fn respond_challenge(
-    ctx: Context<RespondChallenge>,
-    request_nonce: String,
-    challenge_type: u8,
-    challenger: Pubkey,
-    response_hash: [u8; 32],
-) -> Result<()>
-```
-
-Accounts:
-
-- `responder`: signer, must be `config.authority` or `config.challenge_resolver`
-- `config`: config PDA
-- `receipt`: referenced receipt PDA
-- `challenge`: target challenge PDA
-
-Input parameters:
-
-- `request_nonce`: used to derive the receipt PDA
-- `challenge_type`: target challenge type
-- `challenger`: original challenger pubkey
-- `response_hash`: hash of off-chain response material
-
-Function flow:
-
-1. validates `request_nonce`
-2. validates `challenge_type`
-3. checks the responder is governance-authorized
-4. checks the target challenge matches challenger and type
-5. checks the challenge is still `Open`
-6. checks the response window has not closed
-7. writes `response_hash`
-8. sets challenge status to `Responded`
-9. emits `ChallengeResponded`
-
-Result:
-
-- the challenge now contains a response anchor and is ready for final resolution
-
-## 8. `resolve_challenge`
-
-Implementation:
-
-- [challenge.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/programs/clawfarm-attestation/src/instructions/challenge.rs#L102)
+- [challenge.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/programs/clawfarm-attestation/src/instructions/challenge.rs#L55)
 
 Signature:
 
@@ -778,7 +757,7 @@ Function flow:
 2. validates `challenge_type`
 3. validates `resolution_code` and rejects `None`
 4. checks the challenge matches challenger and type
-5. checks the challenge is `Open` or `Responded`
+5. checks the challenge is `Open`
 6. writes `resolution_code` and `resolved_at`
 7. updates the receipt to a terminal state:
    - `Accepted` or `ReceiptInvalidated` -> `Rejected`
@@ -791,7 +770,7 @@ Result:
 
 - the receipt leaves the active dispute state and becomes closable later
 
-## 9. `finalize_receipt`
+## 8. `finalize_receipt`
 
 Implementation:
 
@@ -826,11 +805,11 @@ Result:
 
 - an uncontested receipt becomes terminal and can later be closed
 
-## 10. `close_challenge`
+## 9. `close_challenge`
 
 Implementation:
 
-- [challenge.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/programs/clawfarm-attestation/src/instructions/challenge.rs#L165)
+- [challenge.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/programs/clawfarm-attestation/src/instructions/challenge.rs#L117)
 
 Signature:
 
@@ -870,7 +849,7 @@ Result:
 
 - challenge rent is returned to `recipient`
 
-## 11. `close_receipt`
+## 10. `close_receipt`
 
 Implementation:
 
@@ -930,11 +909,6 @@ Challenge lifecycle:
 
 ```text
 Open
-  -> Responded
-  -> Accepted
-  -> Rejected
-
-Responded
   -> Accepted
   -> Rejected
 ```
@@ -959,7 +933,6 @@ Current events:
 - `ReceiptFinalized`
 - `ReceiptClosed`
 - `ChallengeOpened`
-- `ChallengeResponded`
 - `ChallengeResolved`
 - `ChallengeClosed`
 
