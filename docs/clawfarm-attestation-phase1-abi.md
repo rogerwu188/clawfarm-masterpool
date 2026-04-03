@@ -400,11 +400,14 @@ Args:
 Accounts:
 
 ```text
+[signer]           authority
+[]                 config
 [writable]         receipt
 ```
 
 Runtime rule:
 
+- `authority` must equal `config.authority`
 - receipt must still be `submitted` and the challenge window must be over
 
 ## 9. `close_challenge`

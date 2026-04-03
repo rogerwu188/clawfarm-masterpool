@@ -447,6 +447,13 @@
       "name": "finalize_receipt",
       "accounts": [
         {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "config"
+        },
+        {
           "name": "receipt",
           "writable": true
         }

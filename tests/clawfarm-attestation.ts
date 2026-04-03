@@ -178,9 +178,24 @@ describe("clawfarm-attestation", () => {
     await sendSubmitReceipt(submit);
     await sleep(3_000);
 
+    await expectAnchorError(
+      program.methods
+        .finalizeReceipt()
+        .accounts({
+          authority: outsider.publicKey,
+          config: configPda,
+          receipt: receiptPda,
+        } as any)
+        .signers([outsider])
+        .rpc(),
+      "ConstraintHasOne"
+    );
+
     await program.methods
       .finalizeReceipt()
       .accounts({
+        authority: wallet.publicKey,
+        config: configPda,
         receipt: receiptPda,
       } as any)
       .rpc();

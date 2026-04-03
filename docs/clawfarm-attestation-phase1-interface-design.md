@@ -495,8 +495,15 @@ Signature:
 pub fn finalize_receipt(ctx: Context<FinalizeReceipt>) -> Result<()>
 ```
 
+Accounts:
+
+- `authority`: must equal `config.authority`
+- `config`
+- `receipt`
+
 Checks:
 
+- `authority == config.authority`
 - receipt status is `Submitted`
 - current time is greater than `challenge_deadline`
 
@@ -636,8 +643,8 @@ Recommended event-driven loop:
 4. Fetch the full canonical receipt object and challenge evidence from off-chain
    storage, then derive one deterministic `resolution_code`.
 5. Submit `resolve_challenge` from `config.challenge_resolver` for disputed
-   receipts, or call `finalize_receipt` when an uncontested receipt reaches
-   `challenge_deadline`.
+   receipts, or submit `finalize_receipt` from `config.authority` when an
+   uncontested receipt reaches `challenge_deadline`.
 6. Once a receipt or challenge is terminal, let `config.authority` run the close
    instructions and remove the item from the bot's live queue.
 
@@ -646,6 +653,38 @@ Cold-start recovery:
 - replay `ReceiptSubmitted` first, then fold in `ChallengeOpened`,
   `ChallengeResolved`, `ReceiptFinalized`, and `ReceiptClosed`
 - rebuild the live queue keyed by `receipt` pubkey instead of scanning every PDA
+
+Suggested live index shape:
+
+- `receipts_live` keyed by `receipt`
+  - `receipt`
+  - `request_nonce`
+  - `receipt_hash`
+  - `provider`
+  - `signer`
+  - `challenge_deadline`
+  - `receipt_status`
+  - `active_challenge_count`
+  - `next_action_at`
+  - `last_event_slot`
+- `challenges_live` keyed by `challenge`
+  - `challenge`
+  - `receipt`
+  - `challenger`
+  - `challenge_type`
+  - `challenge_status`
+  - `resolution_code`
+  - `opened_at`
+  - `last_event_slot`
+
+Suggested replay order:
+
+1. `ReceiptSubmitted`
+2. `ChallengeOpened`
+3. `ChallengeResolved`
+4. `ReceiptFinalized`
+5. `ReceiptClosed`
+6. `ChallengeClosed`
 
 Implications:
 
