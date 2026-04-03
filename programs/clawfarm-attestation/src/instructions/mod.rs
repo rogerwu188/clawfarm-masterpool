@@ -3,5 +3,5 @@ pub mod challenge;
 pub mod receipt;
 
 pub use admin::{InitializeConfig, RevokeProviderSigner, SetPause, UpsertProviderSigner};
-pub use challenge::{OpenChallenge, ResolveChallenge, RespondChallenge};
-pub use receipt::{FinalizeReceipt, SubmitReceipt};
+pub use challenge::{CloseChallenge, OpenChallenge, ResolveChallenge, RespondChallenge};
+pub use receipt::{CloseReceipt, FinalizeReceipt, SubmitReceipt};

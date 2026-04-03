@@ -5,7 +5,7 @@ use solana_sha256_hasher::hash;
 use crate::{
     constants::{CONFIG_SEED, PROVIDER_SIGNER_SEED, RECEIPT_SEED},
     error::ErrorCode,
-    events::{ReceiptFinalized, ReceiptSubmitted},
+    events::{ReceiptClosed, ReceiptFinalized, ReceiptSubmitted},
     state::{Config, ProviderSigner, Receipt, ReceiptStatus, SignerStatus, SubmitReceiptArgs},
     utils::{
         attester_type_mask, build_phase1_canonical_cbor, provider_signer_seed, request_nonce_seed,
@@ -61,27 +61,13 @@ pub fn submit_receipt(ctx: Context<SubmitReceipt>, args: SubmitReceiptArgs) -> R
     )?;
 
     let receipt = &mut ctx.accounts.receipt;
-    receipt.request_nonce = args.request_nonce.clone();
-    receipt.proof_id = args.proof_id.clone();
-    receipt.provider = args.provider.clone();
-    receipt.model = args.model.clone();
-    receipt.proof_mode = args.proof_mode;
-    receipt.attester_type = args.attester_type;
-    receipt.usage_basis = args.usage_basis;
-    receipt.prompt_tokens = args.prompt_tokens;
-    receipt.completion_tokens = args.completion_tokens;
-    receipt.total_tokens = args.total_tokens;
-    receipt.charge_atomic = args.charge_atomic;
-    receipt.charge_mint = args.charge_mint;
     receipt.receipt_hash = args.receipt_hash;
     receipt.signer = args.signer;
-    receipt.proof_url_hash = hash(args.proof_url.as_bytes()).to_bytes();
     receipt.submitted_at = now;
     receipt.challenge_deadline = now.saturating_add(config.challenge_window_seconds);
     receipt.finalized_at = 0;
     receipt.status = ReceiptStatus::Submitted as u8;
     receipt.bump = ctx.bumps.receipt;
-    receipt.reserved = [0; 64];
 
     config.receipt_count = config.receipt_count.saturating_add(1);
 
@@ -101,10 +87,6 @@ pub fn finalize_receipt(ctx: Context<FinalizeReceipt>, request_nonce: String) ->
     let receipt = &mut ctx.accounts.receipt;
 
     require!(
-        receipt.request_nonce == request_nonce,
-        ErrorCode::ReceiptNonceMismatch
-    );
-    require!(
         receipt.status == ReceiptStatus::Submitted as u8,
         ErrorCode::ReceiptNotFinalizable
     );
@@ -118,12 +100,36 @@ pub fn finalize_receipt(ctx: Context<FinalizeReceipt>, request_nonce: String) ->
 
     emit!(ReceiptFinalized {
         request_nonce,
-        proof_id: receipt.proof_id.clone(),
-        provider: receipt.provider.clone(),
         signer: receipt.signer,
         receipt_hash: receipt.receipt_hash,
     });
     Ok(())
+}
+
+pub fn close_receipt(ctx: Context<CloseReceipt>, request_nonce: String) -> Result<()> {
+    validate_request_nonce(&request_nonce)?;
+    let receipt = &ctx.accounts.receipt;
+    require!(
+        is_terminal_receipt_status(receipt.status),
+        ErrorCode::ReceiptNotClosable
+    );
+
+    emit!(ReceiptClosed {
+        receipt: receipt.key(),
+        signer: receipt.signer,
+        receipt_hash: receipt.receipt_hash,
+        status: receipt.status,
+    });
+    Ok(())
+}
+
+fn is_terminal_receipt_status(status: u8) -> bool {
+    matches!(
+        status,
+        x if x == ReceiptStatus::Finalized as u8
+            || x == ReceiptStatus::Rejected as u8
+            || x == ReceiptStatus::Slashed as u8
+    )
 }
 
 #[derive(Accounts)]
@@ -173,6 +179,20 @@ pub struct FinalizeReceipt<'info> {
         mut,
         seeds = [RECEIPT_SEED, &request_nonce_seed(request_nonce.as_str())],
         bump = receipt.bump
+    )]
+    pub receipt: Account<'info, Receipt>,
+}
+
+#[derive(Accounts)]
+#[instruction(request_nonce: String)]
+pub struct CloseReceipt<'info> {
+    #[account(mut)]
+    pub recipient: Signer<'info>,
+    #[account(
+        mut,
+        seeds = [RECEIPT_SEED, &request_nonce_seed(request_nonce.as_str())],
+        bump = receipt.bump,
+        close = recipient
     )]
     pub receipt: Account<'info, Receipt>,
 }

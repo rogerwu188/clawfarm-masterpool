@@ -80,4 +80,8 @@ pub enum ErrorCode {
     MissingEd25519Instruction,
     #[msg("ed25519 verification instruction does not match the receipt args")]
     Ed25519InstructionMismatch,
+    #[msg("Receipt is not in a terminal state and cannot be closed")]
+    ReceiptNotClosable,
+    #[msg("Challenge is not in a terminal state and cannot be closed")]
+    ChallengeNotClosable,
 }

@@ -1,8 +1,6 @@
 use anchor_lang::prelude::*;
 
-use crate::constants::{
-    MAX_KEY_ID_LEN, MAX_MODEL_LEN, MAX_PROOF_ID_LEN, MAX_PROVIDER_LEN, MAX_REQUEST_NONCE_LEN,
-};
+use crate::constants::{MAX_KEY_ID_LEN, MAX_PROVIDER_LEN};
 
 #[account]
 #[derive(InitSpace)]
@@ -42,38 +40,18 @@ pub struct ProviderSigner {
 #[account]
 #[derive(InitSpace)]
 pub struct Receipt {
-    #[max_len(MAX_REQUEST_NONCE_LEN)]
-    pub request_nonce: String,
-    #[max_len(MAX_PROOF_ID_LEN)]
-    pub proof_id: String,
-    #[max_len(MAX_PROVIDER_LEN)]
-    pub provider: String,
-    #[max_len(MAX_MODEL_LEN)]
-    pub model: String,
-    pub proof_mode: u8,
-    pub attester_type: u8,
-    pub usage_basis: u8,
-    pub prompt_tokens: u64,
-    pub completion_tokens: u64,
-    pub total_tokens: u64,
-    pub charge_atomic: u64,
-    pub charge_mint: Pubkey,
     pub receipt_hash: [u8; 32],
     pub signer: Pubkey,
-    pub proof_url_hash: [u8; 32],
     pub submitted_at: i64,
     pub challenge_deadline: i64,
     pub finalized_at: i64,
     pub status: u8,
     pub bump: u8,
-    pub reserved: [u8; 64],
 }
 
 #[account]
 #[derive(InitSpace)]
 pub struct Challenge {
-    #[max_len(MAX_REQUEST_NONCE_LEN)]
-    pub request_nonce: String,
     pub receipt: Pubkey,
     pub challenger: Pubkey,
     pub challenge_type: u8,
@@ -85,5 +63,4 @@ pub struct Challenge {
     pub status: u8,
     pub resolution_code: u8,
     pub bump: u8,
-    pub reserved: [u8; 32],
 }

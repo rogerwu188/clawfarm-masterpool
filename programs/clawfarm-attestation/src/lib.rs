@@ -21,13 +21,17 @@ use instructions::admin::{
     __client_accounts_set_pause, __client_accounts_upsert_provider_signer,
 };
 use instructions::challenge::{
-    __client_accounts_open_challenge, __client_accounts_resolve_challenge,
-    __client_accounts_respond_challenge,
+    __client_accounts_close_challenge, __client_accounts_open_challenge,
+    __client_accounts_resolve_challenge, __client_accounts_respond_challenge,
 };
-use instructions::receipt::{__client_accounts_finalize_receipt, __client_accounts_submit_receipt};
+use instructions::receipt::{
+    __client_accounts_close_receipt, __client_accounts_finalize_receipt,
+    __client_accounts_submit_receipt,
+};
 pub use instructions::{
-    FinalizeReceipt, InitializeConfig, OpenChallenge, ResolveChallenge, RespondChallenge,
-    RevokeProviderSigner, SetPause, SubmitReceipt, UpsertProviderSigner,
+    CloseChallenge, CloseReceipt, FinalizeReceipt, InitializeConfig, OpenChallenge,
+    ResolveChallenge, RespondChallenge, RevokeProviderSigner, SetPause, SubmitReceipt,
+    UpsertProviderSigner,
 };
 pub use state::*;
 
@@ -136,6 +140,19 @@ pub mod clawfarm_attestation {
 
     pub fn finalize_receipt(ctx: Context<FinalizeReceipt>, request_nonce: String) -> Result<()> {
         instructions::receipt::finalize_receipt(ctx, request_nonce)
+    }
+
+    pub fn close_challenge(
+        ctx: Context<CloseChallenge>,
+        request_nonce: String,
+        challenge_type: u8,
+        challenger: Pubkey,
+    ) -> Result<()> {
+        instructions::challenge::close_challenge(ctx, request_nonce, challenge_type, challenger)
+    }
+
+    pub fn close_receipt(ctx: Context<CloseReceipt>, request_nonce: String) -> Result<()> {
+        instructions::receipt::close_receipt(ctx, request_nonce)
     }
 }
 

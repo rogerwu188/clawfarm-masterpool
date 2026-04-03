@@ -61,8 +61,8 @@ describe("clawfarm-attestation", () => {
         authority,
         pauseAuthority,
         challengeResolver,
-        new BN(30),
-        new BN(30)
+        new BN(1),
+        new BN(1)
       )
       .accounts({
         payer: wallet.publicKey,
@@ -146,26 +146,49 @@ describe("clawfarm-attestation", () => {
 
     const receipt = await program.account.receipt.fetch(receiptPda);
     const config = await program.account.config.fetch(configPda);
-    assert.equal(receipt.requestNonce, requestNonce);
-    assert.equal(receipt.proofId, "cap_test_001");
-    assert.equal(receipt.provider, providerCode);
     assert.ok(receipt.signer.equals(providerSigner.publicKey));
-    assert.deepEqual(
-      receipt.proofUrlHash,
-      Array.from(
-        sha256(
-          Buffer.from(
-            "https://provider.example.com/api/public/v1/proofs/cap_test_001"
-          )
-        )
-      )
-    );
+    assert.deepEqual(receipt.receiptHash, Array.from(submit.receiptHash));
     assert.equal(receipt.status, 0);
+    assert.equal(receipt.finalizedAt.toNumber(), 0);
     assert.equal(config.receiptCount.toNumber(), 1);
   });
 
-  it("opens a challenge, blocks unauthorized response, and resolves it", async () => {
-    const requestNonce = "cfn_submit_ok_001";
+  it("finalizes and closes an unchallenged receipt", async () => {
+    const requestNonce = "cfn_finalize_close_001";
+    const submit = makeSubmitArgs(requestNonce);
+    const receiptPda = deriveReceiptPda(requestNonce);
+
+    await sendSubmitReceipt(submit);
+    await sleep(3_000);
+
+    await program.methods
+      .finalizeReceipt(requestNonce)
+      .accounts({
+        caller: wallet.publicKey,
+        config: configPda,
+        receipt: receiptPda,
+      } as any)
+      .rpc();
+
+    const finalized = await program.account.receipt.fetch(receiptPda);
+    assert.equal(finalized.status, 2);
+    assert.isAbove(finalized.finalizedAt.toNumber(), 0);
+
+    await program.methods
+      .closeReceipt(requestNonce)
+      .accounts({
+        recipient: wallet.publicKey,
+        receipt: receiptPda,
+      } as any)
+      .rpc();
+
+    const closed = await provider.connection.getAccountInfo(receiptPda);
+    assert.isNull(closed);
+  });
+
+  it("opens a challenge, resolves it into a terminal state, and closes the accounts", async () => {
+    const requestNonce = "cfn_challenge_close_001";
+    const submit = makeSubmitArgs(requestNonce);
     const receiptPda = deriveReceiptPda(requestNonce);
     const challengePda = deriveChallengePda(
       receiptPda,
@@ -174,6 +197,8 @@ describe("clawfarm-attestation", () => {
     );
     const evidenceHash = Array.from(fillBytes(32, 7));
     const responseHash = Array.from(fillBytes(32, 9));
+
+    await sendSubmitReceipt(submit);
 
     await program.methods
       .openChallenge(requestNonce, challengeType, evidenceHash)
@@ -236,10 +261,33 @@ describe("clawfarm-attestation", () => {
     challenge = await program.account.challenge.fetch(challengePda);
     const config = await program.account.config.fetch(configPda);
 
-    assert.equal(receipt.status, 0);
+    assert.equal(receipt.status, 2);
+    assert.isAbove(receipt.finalizedAt.toNumber(), 0);
     assert.equal(challenge.status, 3);
     assert.equal(challenge.resolutionCode, resolutionRejected);
     assert.equal(config.challengeCount.toNumber(), 1);
+
+    await program.methods
+      .closeChallenge(requestNonce, challengeType, challenger.publicKey)
+      .accounts({
+        recipient: wallet.publicKey,
+        receipt: receiptPda,
+        challenge: challengePda,
+      } as any)
+      .rpc();
+
+    await program.methods
+      .closeReceipt(requestNonce)
+      .accounts({
+        recipient: wallet.publicKey,
+        receipt: receiptPda,
+      } as any)
+      .rpc();
+
+    const closedChallenge = await provider.connection.getAccountInfo(challengePda);
+    const closedReceipt = await provider.connection.getAccountInfo(receiptPda);
+    assert.isNull(closedChallenge);
+    assert.isNull(closedReceipt);
   });
 
   function makeSubmitArgs(
@@ -377,6 +425,10 @@ describe("clawfarm-attestation", () => {
       ],
       program.programId
     )[0];
+  }
+
+  function sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 });
 
