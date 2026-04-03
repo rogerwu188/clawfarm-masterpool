@@ -61,7 +61,6 @@ receipt:
 - `challenge_deadline`
 - `finalized_at`
 - `status`
-- `bump`
 
 The full receipt body is expected to live off-chain, for example in Clawfarm
 managed S3 storage.
@@ -112,12 +111,7 @@ Fields:
 - `pause_authority: Pubkey`
 - `challenge_resolver: Pubkey`
 - `challenge_window_seconds: i64`
-- `receipt_count: u64`
-- `challenge_count: u64`
 - `is_paused: bool`
-- `phase2_enabled: bool`
-- `bump: u8`
-- `reserved: [u8; 32]`
 
 Purpose:
 
@@ -145,8 +139,6 @@ Fields:
 - `metadata_hash: [u8; 32]`
 - `created_at: i64`
 - `updated_at: i64`
-- `bump: u8`
-- `reserved: [u8; 32]`
 
 Purpose:
 
@@ -166,7 +158,6 @@ Fields:
 - `challenge_deadline: i64`
 - `finalized_at: i64`
 - `status: u8`
-- `bump: u8`
 
 Purpose:
 
@@ -177,7 +168,7 @@ Purpose:
 Notes:
 
 - `request_nonce` is not stored in the account; it survives only in PDA derivation
-- `proof_id`, `provider`, `model`, token counts, and `proof_url` stay off-chain
+- `proof_id`, `provider`, `model`, and detailed usage metadata stay off-chain
 - `ReceiptSubmitted` event still exposes `request_nonce`, `proof_id`, and `provider`
   for indexing convenience
 
@@ -197,7 +188,6 @@ Fields:
 - `resolved_at: i64`
 - `status: u8`
 - `resolution_code: u8`
-- `bump: u8`
 
 Purpose:
 
@@ -300,9 +290,7 @@ Checks:
 Effects:
 
 - creates `Config`
-- initializes counters to zero
 - sets `is_paused = false`
-- sets `phase2_enabled = false`
 
 ## 2. `upsert_provider_signer`
 
@@ -412,10 +400,8 @@ pub struct SubmitReceiptArgs {
     pub expires_at: Option<i64>,
     pub http_status: Option<u16>,
     pub latency_ms: Option<u64>,
-    pub proof_url: String,
     pub receipt_hash: [u8; 32],
     pub signer: Pubkey,
-    pub signature: [u8; 64],
 }
 ```
 
@@ -431,7 +417,7 @@ Checks:
 - signer registry matches `provider`, `signer`, and `attester_type`
 - signer validity window includes `now`
 - on-chain canonical CBOR rebuild hashes to `receipt_hash`
-- preceding `ed25519` verify instruction matches `signer`, `signature`, and `receipt_hash`
+- preceding `ed25519` verify instruction matches `signer` and `receipt_hash`
 
 Effects:
 
@@ -439,7 +425,6 @@ Effects:
 - stores only minimal anchor fields
 - sets `status = Submitted`
 - sets `challenge_deadline = now + challenge_window_seconds`
-- increments `config.receipt_count`
 
 ## 6. `open_challenge`
 
@@ -452,7 +437,6 @@ Signature:
 ```rust
 pub fn open_challenge(
     ctx: Context<OpenChallenge>,
-    request_nonce: String,
     challenge_type: u8,
     evidence_hash: [u8; 32],
 ) -> Result<()>
@@ -460,9 +444,7 @@ pub fn open_challenge(
 
 Checks:
 
-- `request_nonce` format is valid
 - `challenge_type` is valid
-- receipt PDA exists
 - receipt status is `Submitted`
 - current time is not past `challenge_deadline`
 
@@ -471,7 +453,6 @@ Effects:
 - creates `Challenge`
 - sets `challenge.status = Open`
 - sets `receipt.status = Challenged`
-- increments `config.challenge_count`
 
 ## 7. `resolve_challenge`
 
@@ -484,9 +465,6 @@ Signature:
 ```rust
 pub fn resolve_challenge(
     ctx: Context<ResolveChallenge>,
-    request_nonce: String,
-    challenge_type: u8,
-    challenger: Pubkey,
     resolution_code: u8,
 ) -> Result<()>
 ```
@@ -494,9 +472,8 @@ pub fn resolve_challenge(
 Checks:
 
 - only `config.challenge_resolver`
-- `request_nonce` format is valid
-- `challenge_type` is valid
 - `resolution_code` is valid and not `None`
+- `challenge.receipt == receipt.key()`
 - challenge is `Open`
 
 Effects:
@@ -523,15 +500,11 @@ Purpose:
 Signature:
 
 ```rust
-pub fn finalize_receipt(
-    ctx: Context<FinalizeReceipt>,
-    request_nonce: String,
-) -> Result<()>
+pub fn finalize_receipt(ctx: Context<FinalizeReceipt>) -> Result<()>
 ```
 
 Checks:
 
-- `request_nonce` format is valid
 - receipt status is `Submitted`
 - current time is greater than `challenge_deadline`
 
@@ -549,18 +522,11 @@ Purpose:
 Signature:
 
 ```rust
-pub fn close_challenge(
-    ctx: Context<CloseChallenge>,
-    request_nonce: String,
-    challenge_type: u8,
-    challenger: Pubkey,
-) -> Result<()>
+pub fn close_challenge(ctx: Context<CloseChallenge>) -> Result<()>
 ```
 
 Checks:
 
-- `request_nonce` format is valid
-- `challenge_type` is valid
 - challenge status is `Accepted`, `Rejected`, or `Expired`
 
 Effects:
@@ -577,15 +543,11 @@ Purpose:
 Signature:
 
 ```rust
-pub fn close_receipt(
-    ctx: Context<CloseReceipt>,
-    request_nonce: String,
-) -> Result<()>
+pub fn close_receipt(ctx: Context<CloseReceipt>) -> Result<()>
 ```
 
 Checks:
 
-- `request_nonce` format is valid
 - receipt status is `Finalized`, `Rejected`, or `Slashed`
 
 Effects:
@@ -640,12 +602,10 @@ The canonical receipt digest is:
 
 Fields excluded from the signed payload:
 
-- `proof_url`
 - `signer`
-- `signature`
 - `receipt_hash`
 
-`proof_url` is validated as a transport field but not stored on-chain in Phase 1.
+Transport-only receipt metadata remains fully off-chain in Phase 1.
 
 ## Recommended Off-Chain Storage Flow
 
@@ -680,10 +640,10 @@ Current allocation uses `8 + <Account>::INIT_SPACE`.
 
 Effective sizes in the current implementation:
 
-- `Config = 163 bytes`
-- `ProviderSigner = 339 bytes`
-- `Receipt = 98 bytes`
-- `Challenge = 124 bytes`
+- `Config = 113 bytes`
+- `ProviderSigner = 306 bytes`
+- `Receipt = 97 bytes`
+- `Challenge = 123 bytes`
 
 This is the main rent reduction relative to the previous design that stored the
 full receipt body on-chain.

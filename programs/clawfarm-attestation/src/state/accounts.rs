@@ -9,12 +9,7 @@ pub struct Config {
     pub pause_authority: Pubkey,
     pub challenge_resolver: Pubkey,
     pub challenge_window_seconds: i64,
-    pub receipt_count: u64,
-    pub challenge_count: u64,
     pub is_paused: bool,
-    pub phase2_enabled: bool,
-    pub bump: u8,
-    pub reserved: [u8; 32],
 }
 
 #[account]
@@ -32,8 +27,6 @@ pub struct ProviderSigner {
     pub metadata_hash: [u8; 32],
     pub created_at: i64,
     pub updated_at: i64,
-    pub bump: u8,
-    pub reserved: [u8; 32],
 }
 
 #[account]
@@ -45,7 +38,6 @@ pub struct Receipt {
     pub challenge_deadline: i64,
     pub finalized_at: i64,
     pub status: u8,
-    pub bump: u8,
 }
 
 #[account]
@@ -59,5 +51,4 @@ pub struct Challenge {
     pub resolved_at: i64,
     pub status: u8,
     pub resolution_code: u8,
-    pub bump: u8,
 }

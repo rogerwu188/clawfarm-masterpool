@@ -96,44 +96,26 @@ pub mod clawfarm_attestation {
 
     pub fn open_challenge(
         ctx: Context<OpenChallenge>,
-        request_nonce: String,
         challenge_type: u8,
         evidence_hash: [u8; 32],
     ) -> Result<()> {
-        instructions::challenge::open_challenge(ctx, request_nonce, challenge_type, evidence_hash)
+        instructions::challenge::open_challenge(ctx, challenge_type, evidence_hash)
     }
 
-    pub fn resolve_challenge(
-        ctx: Context<ResolveChallenge>,
-        request_nonce: String,
-        challenge_type: u8,
-        challenger: Pubkey,
-        resolution_code: u8,
-    ) -> Result<()> {
-        instructions::challenge::resolve_challenge(
-            ctx,
-            request_nonce,
-            challenge_type,
-            challenger,
-            resolution_code,
-        )
+    pub fn resolve_challenge(ctx: Context<ResolveChallenge>, resolution_code: u8) -> Result<()> {
+        instructions::challenge::resolve_challenge(ctx, resolution_code)
     }
 
-    pub fn finalize_receipt(ctx: Context<FinalizeReceipt>, request_nonce: String) -> Result<()> {
-        instructions::receipt::finalize_receipt(ctx, request_nonce)
+    pub fn finalize_receipt(ctx: Context<FinalizeReceipt>) -> Result<()> {
+        instructions::receipt::finalize_receipt(ctx)
     }
 
-    pub fn close_challenge(
-        ctx: Context<CloseChallenge>,
-        request_nonce: String,
-        challenge_type: u8,
-        challenger: Pubkey,
-    ) -> Result<()> {
-        instructions::challenge::close_challenge(ctx, request_nonce, challenge_type, challenger)
+    pub fn close_challenge(ctx: Context<CloseChallenge>) -> Result<()> {
+        instructions::challenge::close_challenge(ctx)
     }
 
-    pub fn close_receipt(ctx: Context<CloseReceipt>, request_nonce: String) -> Result<()> {
-        instructions::receipt::close_receipt(ctx, request_nonce)
+    pub fn close_receipt(ctx: Context<CloseReceipt>) -> Result<()> {
+        instructions::receipt::close_receipt(ctx)
     }
 }
 

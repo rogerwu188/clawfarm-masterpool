@@ -83,11 +83,10 @@ fn preceding_ed25519_instruction_must_match_receipt_args() {
         Epoch::default(),
     );
 
-    verify_preceding_ed25519_instruction(&account_info, &signer, &signature, &message).unwrap();
+    verify_preceding_ed25519_instruction(&account_info, &signer, &message).unwrap();
     assert!(verify_preceding_ed25519_instruction(
         &account_info,
         &Pubkey::new_from_array([8; 32]),
-        &signature,
         &message
     )
     .is_err());
@@ -113,10 +112,8 @@ fn sample_submit_receipt_args() -> SubmitReceiptArgs {
         expires_at: None,
         http_status: None,
         latency_ms: None,
-        proof_url: "https://provider.example.com/api/public/v1/proofs/cap_test_001".to_string(),
         receipt_hash: [0; 32],
         signer: Pubkey::new_unique(),
-        signature: [0; 64],
     }
 }
 

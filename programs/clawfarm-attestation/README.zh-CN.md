@@ -51,12 +51,7 @@ PDA Seed：
 - `pause_authority`
 - `challenge_resolver`
 - `challenge_window_seconds`
-- `receipt_count`
-- `challenge_count`
 - `is_paused`
-- `phase2_enabled`
-- `bump`
-- `reserved`
 
 用途：
 
@@ -80,8 +75,6 @@ PDA Seed：
 - `metadata_hash`
 - `created_at`
 - `updated_at`
-- `bump`
-- `reserved`
 
 用途：
 
@@ -101,7 +94,6 @@ PDA Seed：
 - `challenge_deadline`
 - `finalized_at`
 - `status`
-- `bump`
 
 用途：
 
@@ -125,7 +117,6 @@ PDA Seed：
 - `resolved_at`
 - `status`
 - `resolution_code`
-- `bump`
 
 用途：
 
@@ -212,12 +203,10 @@ Canonicalization 逻辑见 [utils.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-m
 
 以下字段不会进入签名 payload：
 
-- `proof_url`
 - `signer`
-- `signature`
 - `receipt_hash`
 
-也就是说，`proof_url` 只是一个会被校验的传输字段，但在 Phase 1 中不会写入 `Receipt` 账户，也不参与 canonical hash。
+也就是说，传输层的 receipt 元数据完全留在链下；链上只绑定 canonical digest 和最小生命周期状态。
 
 ## 推荐的 Clawfarm S3 流程
 
@@ -307,8 +296,8 @@ Canonicalization 逻辑见 [utils.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-m
 
 ### 当前账户大小
 
-- `Receipt` 分配大小：`98 bytes`
-- `Challenge` 分配大小：`124 bytes`
+- `Receipt` 分配大小：`97 bytes`
+- `Challenge` 分配大小：`123 bytes`
 
 ### Rent 公式
 
@@ -321,9 +310,9 @@ minimum_balance = (account_data_len + 128) * 6,960 lamports
 可得到：
 
 - 每个 `Receipt`：
-  - `(98 + 128) * 6,960 = 1,572,960 lamports = 0.00157296 SOL`
+  - `(97 + 128) * 6,960 = 1,566,000 lamports = 0.001566 SOL`
 - 每个 `Challenge`：
-  - `(124 + 128) * 6,960 = 1,753,920 lamports = 0.00175392 SOL`
+  - `(123 + 128) * 6,960 = 1,746,960 lamports = 0.00174696 SOL`
 
 重要说明：
 
@@ -336,14 +325,14 @@ minimum_balance = (account_data_len + 128) * 6,960 lamports
 
 ```text
 receipt_peak_sol
-  = daily_call_count * challenge_window_days * 0.00157296
+  = daily_call_count * challenge_window_days * 0.001566
 ```
 
 如果每个 receipt 同时都存在一个 live challenge，那么保守上限是：
 
 ```text
 receipt_plus_challenge_peak_sol
-  = daily_call_count * challenge_window_days * 0.00332688
+  = daily_call_count * challenge_window_days * 0.00331296
 ```
 
 ### 仅 Receipt 的峰值占用
@@ -352,9 +341,9 @@ receipt_plus_challenge_peak_sol
 
 | 每日调用量 | 1 天窗口 | 3 天窗口 | 7 天窗口 |
 |---|---:|---:|---:|
-| 1,000 | 1.57296 SOL | 4.71888 SOL | 11.01072 SOL |
-| 10,000 | 15.7296 SOL | 47.1888 SOL | 110.1072 SOL |
-| 100,000 | 157.296 SOL | 471.888 SOL | 1101.072 SOL |
+| 1,000 | 1.566 SOL | 4.698 SOL | 10.962 SOL |
+| 10,000 | 15.66 SOL | 46.98 SOL | 109.62 SOL |
+| 100,000 | 156.6 SOL | 469.8 SOL | 1096.2 SOL |
 
 ### 保守上限：每个 Receipt 都同时存在一个 Challenge
 
@@ -362,9 +351,9 @@ receipt_plus_challenge_peak_sol
 
 | 每日调用量 | 1 天窗口 | 3 天窗口 | 7 天窗口 |
 |---|---:|---:|---:|
-| 1,000 | 3.32688 SOL | 9.98064 SOL | 23.28816 SOL |
-| 10,000 | 33.2688 SOL | 99.8064 SOL | 232.8816 SOL |
-| 100,000 | 332.688 SOL | 998.064 SOL | 2328.816 SOL |
+| 1,000 | 3.31296 SOL | 9.93888 SOL | 23.19072 SOL |
+| 10,000 | 33.1296 SOL | 99.3888 SOL | 231.9072 SOL |
+| 100,000 | 331.296 SOL | 993.888 SOL | 2319.072 SOL |
 
 ### 如何理解这些数字
 
@@ -412,11 +401,8 @@ pub fn initialize_config(
 1. 校验 challenge window 大于 0
 2. 初始化 config PDA
 3. 写入治理地址和时间窗口
-4. 将 `receipt_count` 和 `challenge_count` 置零
-5. 设置 `is_paused = false`
-6. 设置 `phase2_enabled = false`
-7. 记录 bump
-8. 发出 `ConfigInitialized`
+4. 设置 `is_paused = false`
+5. 发出 `ConfigInitialized`
 
 结果：
 
@@ -470,7 +456,7 @@ pub fn upsert_provider_signer(
 6. 如果是旧账户则保留 `created_at`
 7. 覆盖写入 signer registry 字段
 8. 强制将状态设为 `Active`
-9. 更新时间戳和 bump
+9. 更新时间戳
 10. 发出 `ProviderSignerUpserted`
 
 结果：
@@ -556,7 +542,7 @@ pub fn revoke_provider_signer(
 
 实现位置：
 
-- [receipt.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/programs/clawfarm-attestation/src/instructions/receipt.rs#L16)
+- [receipt.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/programs/clawfarm-attestation/src/instructions/receipt.rs)
 
 签名：
 
@@ -567,7 +553,7 @@ pub fn submit_receipt(ctx: Context<SubmitReceipt>, args: SubmitReceiptArgs) -> R
 账户：
 
 - `payer`：签名者，支付 `Receipt` 的 rent
-- `config`：config PDA，因 `receipt_count` 递增所以为 mutable
+- `config`：只读 config PDA
 - `provider_signer`：signer registry PDA
 - `receipt`：由 `request_nonce` 导出的 receipt PDA
 - `instructions_sysvar`：Solana instruction sysvar，用于 `ed25519` introspection
@@ -595,10 +581,8 @@ pub struct SubmitReceiptArgs {
     pub expires_at: Option<i64>,
     pub http_status: Option<u16>,
     pub latency_ms: Option<u64>,
-    pub proof_url: String,
     pub receipt_hash: [u8; 32],
     pub signer: Pubkey,
-    pub signature: [u8; 64],
 }
 ```
 
@@ -622,10 +606,8 @@ pub struct SubmitReceiptArgs {
 - `expires_at`：可选过期时间
 - `http_status`：可选 HTTP 状态码
 - `latency_ms`：可选请求耗时
-- `proof_url`：会校验但不会写入 `Receipt`
 - `receipt_hash`：canonical receipt digest
-- `signer`：签名公钥
-- `signature`：对 `receipt_hash` 的签名
+- `signer`：签名公钥；交易前一条 `ed25519` 指令必须验证该公钥对 `receipt_hash` 的签名
 
 功能流程：
 
@@ -634,11 +616,10 @@ pub struct SubmitReceiptArgs {
 3. 加载并校验 provider signer registry
 4. 在链上重建 canonical CBOR
 5. 计算哈希并要求其等于 `receipt_hash`
-6. 检查前一条交易指令是否为匹配的 `ed25519` 验签
+6. 检查前一条交易指令是否为匹配的 `ed25519` 验签，且验证的是 `signer` 对 `receipt_hash` 的签名
 7. 创建 `Receipt` PDA
-8. 只写入 `receipt_hash`、`signer`、时间戳、状态和 bump
-9. 递增 `config.receipt_count`
-10. 发出 `ReceiptSubmitted`
+8. 只写入 `receipt_hash`、`signer`、时间戳和状态
+9. 发出 `ReceiptSubmitted`
 
 结果：
 
@@ -649,14 +630,13 @@ pub struct SubmitReceiptArgs {
 
 实现位置：
 
-- [challenge.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/programs/clawfarm-attestation/src/instructions/challenge.rs#L13)
+- [challenge.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/programs/clawfarm-attestation/src/instructions/challenge.rs)
 
 签名：
 
 ```rust
 pub fn open_challenge(
     ctx: Context<OpenChallenge>,
-    request_nonce: String,
     challenge_type: u8,
     evidence_hash: [u8; 32],
 ) -> Result<()>
@@ -665,28 +645,24 @@ pub fn open_challenge(
 账户：
 
 - `challenger`：签名者，支付 `Challenge` 的 rent
-- `config`：config PDA，因 `challenge_count` 递增所以为 mutable
-- `receipt`：目标 receipt PDA
+- `receipt`：目标 receipt 账户
 - `challenge`：由 `(receipt, challenge_type, challenger)` 导出的 challenge PDA
 - `system_program`
 
 入参说明：
 
-- `request_nonce`：用于导出 receipt PDA
 - `challenge_type`：争议类型
 - `evidence_hash`：链下证据哈希
 
 功能流程：
 
-1. 校验 `request_nonce`
-2. 校验 `challenge_type`
-3. 检查 receipt 当前仍是 `Submitted`
-4. 检查当前时间仍在 challenge window 内
-5. 创建 `Challenge` PDA
-6. 写入 challenger、evidence hash、时间戳和状态
-7. 将 receipt 状态设为 `Challenged`
-8. 递增 `config.challenge_count`
-9. 发出 `ChallengeOpened`
+1. 校验 `challenge_type`
+2. 检查 receipt 当前仍是 `Submitted`
+3. 检查当前时间仍在 challenge window 内
+4. 创建 `Challenge` PDA
+5. 写入 challenger、evidence hash、时间戳和状态
+6. 将 receipt 状态设为 `Challenged`
+7. 发出 `ChallengeOpened`
 
 结果：
 
@@ -697,48 +673,37 @@ pub fn open_challenge(
 
 实现位置：
 
-- [challenge.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/programs/clawfarm-attestation/src/instructions/challenge.rs#L55)
+- [challenge.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/programs/clawfarm-attestation/src/instructions/challenge.rs)
 
 签名：
 
 ```rust
-pub fn resolve_challenge(
-    ctx: Context<ResolveChallenge>,
-    request_nonce: String,
-    challenge_type: u8,
-    challenger: Pubkey,
-    resolution_code: u8,
-) -> Result<()>
+pub fn resolve_challenge(ctx: Context<ResolveChallenge>, resolution_code: u8) -> Result<()>
 ```
 
 账户：
 
 - `challenge_resolver`：签名者，必须等于 `config.challenge_resolver`
 - `config`：config PDA
-- `receipt`：关联 receipt PDA
-- `challenge`：目标 challenge PDA
+- `receipt`：关联 receipt 账户
+- `challenge`：目标 challenge 账户；必须指向该 `receipt`
 
 入参说明：
 
-- `request_nonce`：用于导出 receipt PDA
-- `challenge_type`：目标 challenge 类型
-- `challenger`：原始 challenger
 - `resolution_code`：最终裁决结果
 
 功能流程：
 
-1. 校验 `request_nonce`
-2. 校验 `challenge_type`
-3. 校验 `resolution_code`，且不能是 `None`
-4. 检查 challenge 的 challenger 和 type 匹配
-5. 检查 challenge 当前是 `Open`
-6. 写入 `resolution_code` 和 `resolved_at`
-7. 将 receipt 直接推进到终态：
+1. 校验 `resolution_code`，且不能是 `None`
+2. 检查 challenge 当前是 `Open`
+3. 检查 `challenge.receipt == receipt.key()`
+4. 写入 `resolution_code` 和 `resolved_at`
+5. 将 receipt 直接推进到终态：
    - `Accepted` 或 `ReceiptInvalidated` -> `Rejected`
    - `SignerRevoked` -> `Slashed`
    - `Rejected` -> `Finalized`
-8. 设置 `receipt.finalized_at = now`
-9. 发出 `ChallengeResolved`
+6. 设置 `receipt.finalized_at = now`
+7. 发出 `ChallengeResolved`
 
 结果：
 
@@ -748,32 +713,25 @@ pub fn resolve_challenge(
 
 实现位置：
 
-- [receipt.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/programs/clawfarm-attestation/src/instructions/receipt.rs#L84)
+- [receipt.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/programs/clawfarm-attestation/src/instructions/receipt.rs)
 
 签名：
 
 ```rust
-pub fn finalize_receipt(ctx: Context<FinalizeReceipt>, request_nonce: String) -> Result<()>
+pub fn finalize_receipt(ctx: Context<FinalizeReceipt>) -> Result<()>
 ```
 
 账户：
 
-- `caller`：任意签名者
-- `config`：config PDA
-- `receipt`：目标 receipt PDA
-
-入参说明：
-
-- `request_nonce`：用于导出 receipt PDA
+- `receipt`：目标 receipt 账户
 
 功能流程：
 
-1. 校验 `request_nonce`
-2. 检查 receipt 仍然是 `Submitted`
-3. 检查 `now > challenge_deadline`
-4. 将 receipt 状态设为 `Finalized`
-5. 设置 `finalized_at = now`
-6. 发出 `ReceiptFinalized`
+1. 检查 receipt 仍然是 `Submitted`
+2. 检查 `now > challenge_deadline`
+3. 将 receipt 状态设为 `Finalized`
+4. 设置 `finalized_at = now`
+5. 发出 `ReceiptFinalized`
 
 结果：
 
@@ -783,41 +741,27 @@ pub fn finalize_receipt(ctx: Context<FinalizeReceipt>, request_nonce: String) ->
 
 实现位置：
 
-- [challenge.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/programs/clawfarm-attestation/src/instructions/challenge.rs#L117)
+- [challenge.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/programs/clawfarm-attestation/src/instructions/challenge.rs)
 
 签名：
 
 ```rust
-pub fn close_challenge(
-    ctx: Context<CloseChallenge>,
-    request_nonce: String,
-    challenge_type: u8,
-    challenger: Pubkey,
-) -> Result<()>
+pub fn close_challenge(ctx: Context<CloseChallenge>) -> Result<()>
 ```
 
 账户：
 
 - `recipient`：签名者，接收回收的 lamports
-- `receipt`：用于 challenge seed 的 receipt PDA
-- `challenge`：待关闭的 challenge PDA
-
-入参说明：
-
-- `request_nonce`：用于导出 receipt PDA
-- `challenge_type`：目标 challenge 类型
-- `challenger`：原始 challenger
+- `challenge`：终态 challenge 账户
 
 功能流程：
 
-1. 校验 `request_nonce`
-2. 校验 `challenge_type`
-3. 检查 challenge 状态已是终态：
+1. 检查 challenge 状态已是终态：
    - `Accepted`
    - `Rejected`
    - `Expired`
-4. 发出 `ChallengeClosed`
-5. 通过 Anchor 的 `close = recipient` 关闭 challenge 账户
+2. 发出 `ChallengeClosed`
+3. 通过 Anchor 的 `close = recipient` 关闭 challenge 账户
 
 结果：
 
@@ -827,32 +771,27 @@ pub fn close_challenge(
 
 实现位置：
 
-- [receipt.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/programs/clawfarm-attestation/src/instructions/receipt.rs#L109)
+- [receipt.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/programs/clawfarm-attestation/src/instructions/receipt.rs)
 
 签名：
 
 ```rust
-pub fn close_receipt(ctx: Context<CloseReceipt>, request_nonce: String) -> Result<()>
+pub fn close_receipt(ctx: Context<CloseReceipt>) -> Result<()>
 ```
 
 账户：
 
 - `recipient`：签名者，接收回收的 lamports
-- `receipt`：终态 receipt PDA
-
-入参说明：
-
-- `request_nonce`：用于导出 receipt PDA
+- `receipt`：终态 receipt 账户
 
 功能流程：
 
-1. 校验 `request_nonce`
-2. 检查 receipt 状态已是终态：
+1. 检查 receipt 状态已是终态：
    - `Finalized`
    - `Rejected`
    - `Slashed`
-3. 发出 `ReceiptClosed`
-4. 通过 Anchor 的 `close = recipient` 关闭 receipt 账户
+2. 发出 `ReceiptClosed`
+3. 通过 Anchor 的 `close = recipient` 关闭 receipt 账户
 
 结果：
 

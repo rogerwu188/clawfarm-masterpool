@@ -9,7 +9,7 @@ use crate::{
     state::{Config, ProviderSigner, Receipt, ReceiptStatus, SignerStatus, SubmitReceiptArgs},
     utils::{
         attester_type_mask, build_phase1_canonical_cbor, provider_signer_seed, request_nonce_seed,
-        validate_request_nonce, validate_submit_receipt_args, verify_preceding_ed25519_instruction,
+        validate_submit_receipt_args, verify_preceding_ed25519_instruction,
     },
 };
 
@@ -17,7 +17,7 @@ pub fn submit_receipt(ctx: Context<SubmitReceipt>, args: SubmitReceiptArgs) -> R
     validate_submit_receipt_args(&args)?;
 
     let now = Clock::get()?.unix_timestamp;
-    let config = &mut ctx.accounts.config;
+    let config = &ctx.accounts.config;
     require!(!config.is_paused, ErrorCode::ProgramPaused);
 
     let provider_signer = &ctx.accounts.provider_signer;
@@ -56,7 +56,6 @@ pub fn submit_receipt(ctx: Context<SubmitReceipt>, args: SubmitReceiptArgs) -> R
     verify_preceding_ed25519_instruction(
         &ctx.accounts.instructions_sysvar.to_account_info(),
         &args.signer,
-        &args.signature,
         &args.receipt_hash,
     )?;
 
@@ -67,9 +66,6 @@ pub fn submit_receipt(ctx: Context<SubmitReceipt>, args: SubmitReceiptArgs) -> R
     receipt.challenge_deadline = now.saturating_add(config.challenge_window_seconds);
     receipt.finalized_at = 0;
     receipt.status = ReceiptStatus::Submitted as u8;
-    receipt.bump = ctx.bumps.receipt;
-
-    config.receipt_count = config.receipt_count.saturating_add(1);
 
     emit!(ReceiptSubmitted {
         request_nonce: args.request_nonce,
@@ -81,8 +77,7 @@ pub fn submit_receipt(ctx: Context<SubmitReceipt>, args: SubmitReceiptArgs) -> R
     Ok(())
 }
 
-pub fn finalize_receipt(ctx: Context<FinalizeReceipt>, request_nonce: String) -> Result<()> {
-    validate_request_nonce(&request_nonce)?;
+pub fn finalize_receipt(ctx: Context<FinalizeReceipt>) -> Result<()> {
     let now = Clock::get()?.unix_timestamp;
     let receipt = &mut ctx.accounts.receipt;
 
@@ -99,15 +94,14 @@ pub fn finalize_receipt(ctx: Context<FinalizeReceipt>, request_nonce: String) ->
     receipt.finalized_at = now;
 
     emit!(ReceiptFinalized {
-        request_nonce,
+        receipt: receipt.key(),
         signer: receipt.signer,
         receipt_hash: receipt.receipt_hash,
     });
     Ok(())
 }
 
-pub fn close_receipt(ctx: Context<CloseReceipt>, request_nonce: String) -> Result<()> {
-    validate_request_nonce(&request_nonce)?;
+pub fn close_receipt(ctx: Context<CloseReceipt>) -> Result<()> {
     let receipt = &ctx.accounts.receipt;
     require!(
         is_terminal_receipt_status(receipt.status),
@@ -138,9 +132,8 @@ pub struct SubmitReceipt<'info> {
     #[account(mut)]
     pub payer: Signer<'info>,
     #[account(
-        mut,
         seeds = [CONFIG_SEED],
-        bump = config.bump
+        bump
     )]
     pub config: Account<'info, Config>,
     #[account(
@@ -149,7 +142,7 @@ pub struct SubmitReceipt<'info> {
             &provider_signer_seed(args.provider.as_str()),
             args.signer.as_ref()
         ],
-        bump = provider_signer.bump
+        bump
     )]
     pub provider_signer: Account<'info, ProviderSigner>,
     #[account(
@@ -167,31 +160,17 @@ pub struct SubmitReceipt<'info> {
 }
 
 #[derive(Accounts)]
-#[instruction(request_nonce: String)]
 pub struct FinalizeReceipt<'info> {
-    pub caller: Signer<'info>,
-    #[account(
-        seeds = [CONFIG_SEED],
-        bump = config.bump
-    )]
-    pub config: Account<'info, Config>,
-    #[account(
-        mut,
-        seeds = [RECEIPT_SEED, &request_nonce_seed(request_nonce.as_str())],
-        bump = receipt.bump
-    )]
+    #[account(mut)]
     pub receipt: Account<'info, Receipt>,
 }
 
 #[derive(Accounts)]
-#[instruction(request_nonce: String)]
 pub struct CloseReceipt<'info> {
     #[account(mut)]
     pub recipient: Signer<'info>,
     #[account(
         mut,
-        seeds = [RECEIPT_SEED, &request_nonce_seed(request_nonce.as_str())],
-        bump = receipt.bump,
         close = recipient
     )]
     pub receipt: Account<'info, Receipt>,

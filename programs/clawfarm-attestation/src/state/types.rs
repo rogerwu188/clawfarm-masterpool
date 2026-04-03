@@ -22,10 +22,8 @@ pub struct SubmitReceiptArgs {
     pub expires_at: Option<i64>,
     pub http_status: Option<u16>,
     pub latency_ms: Option<u64>,
-    pub proof_url: String,
     pub receipt_hash: [u8; 32],
     pub signer: Pubkey,
-    pub signature: [u8; 64],
 }
 
 #[repr(u8)]

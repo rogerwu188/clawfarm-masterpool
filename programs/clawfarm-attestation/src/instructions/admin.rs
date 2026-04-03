@@ -22,12 +22,7 @@ pub fn initialize_config(
     config.pause_authority = pause_authority;
     config.challenge_resolver = challenge_resolver;
     config.challenge_window_seconds = challenge_window_seconds;
-    config.receipt_count = 0;
-    config.challenge_count = 0;
     config.is_paused = false;
-    config.phase2_enabled = false;
-    config.bump = ctx.bumps.config;
-    config.reserved = [0; 32];
 
     emit!(ConfigInitialized {
         authority,
@@ -70,8 +65,6 @@ pub fn upsert_provider_signer(
     provider_signer.valid_until = valid_until;
     provider_signer.metadata_hash = metadata_hash;
     provider_signer.updated_at = now;
-    provider_signer.bump = ctx.bumps.provider_signer;
-    provider_signer.reserved = [0; 32];
 
     emit!(ProviderSignerUpserted {
         provider_code,
@@ -143,7 +136,7 @@ pub struct UpsertProviderSigner<'info> {
     pub authority: Signer<'info>,
     #[account(
         seeds = [CONFIG_SEED],
-        bump = config.bump,
+        bump,
         has_one = authority
     )]
     pub config: Account<'info, Config>,
@@ -168,7 +161,7 @@ pub struct SetPause<'info> {
     #[account(
         mut,
         seeds = [CONFIG_SEED],
-        bump = config.bump,
+        bump,
         has_one = pause_authority
     )]
     pub config: Account<'info, Config>,
@@ -180,7 +173,7 @@ pub struct RevokeProviderSigner<'info> {
     pub authority: Signer<'info>,
     #[account(
         seeds = [CONFIG_SEED],
-        bump = config.bump,
+        bump,
         has_one = authority
     )]
     pub config: Account<'info, Config>,
@@ -191,7 +184,7 @@ pub struct RevokeProviderSigner<'info> {
             &provider_signer_seed(provider_code.as_str()),
             signer.as_ref()
         ],
-        bump = provider_signer.bump
+        bump
     )]
     pub provider_signer: Account<'info, ProviderSigner>,
 }

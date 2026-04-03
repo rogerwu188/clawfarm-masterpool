@@ -37,7 +37,7 @@ pub struct ReceiptSubmitted {
 
 #[event]
 pub struct ReceiptFinalized {
-    pub request_nonce: String,
+    pub receipt: Pubkey,
     pub signer: Pubkey,
     pub receipt_hash: [u8; 32],
 }
@@ -52,14 +52,16 @@ pub struct ReceiptClosed {
 
 #[event]
 pub struct ChallengeOpened {
-    pub request_nonce: String,
+    pub challenge: Pubkey,
+    pub receipt: Pubkey,
     pub challenger: Pubkey,
     pub challenge_type: u8,
 }
 
 #[event]
 pub struct ChallengeResolved {
-    pub request_nonce: String,
+    pub challenge: Pubkey,
+    pub receipt: Pubkey,
     pub challenger: Pubkey,
     pub challenge_type: u8,
     pub resolution_code: u8,
