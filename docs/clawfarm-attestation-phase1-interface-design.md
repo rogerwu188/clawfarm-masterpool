@@ -1,92 +1,102 @@
 # Clawfarm Attestation Phase 1 Contract Interface Design
 
-Status: Draft
-Version: v0
+Status: Implemented
+Version: v1
 Last Updated: 2026-04-03
 
 ## Scope
 
-This document drafts the Phase 1 on-chain interface for the Clawfarm attestation flow, based on the AIRouter protocol and storage documents:
+This document describes the current Phase 1 on-chain interface of the dedicated
+`clawfarm_attestation` Solana program in this repository.
 
-- `/Users/lijing/Code/Cobra/Adion/AIRouter/docs/clawfarm-attestation-protocol.md`
-- `/Users/lijing/Code/Cobra/Adion/AIRouter/docs/clawfarm-attestation-cbor.md`
-- `/Users/lijing/Code/Cobra/Adion/AIRouter/docs/clawfarm-solana-service-api.md`
-- `/Users/lijing/Code/Cobra/Adion/AIRouter/docs/clawfarm-attestation-storage-design.md`
+Phase 1 is intentionally narrow:
 
-The design target is a dedicated Solana program for attestation receipts. It is intentionally separate from the current master-pool emission logic.
+- verify a provider or gateway signer against an on-chain registry
+- verify an `ed25519` signature over a canonical receipt digest
+- prevent replay by `request_nonce`
+- keep only a minimal on-chain receipt anchor
+- allow a governance-driven challenge lifecycle
+- close terminal receipt and challenge accounts to reclaim rent
 
-Phase 1 only supports `proof_mode = sig_log`.
+Phase 1 does not:
 
-## Goals
+- store the full receipt body on-chain
+- fetch data from S3, IPFS, or any off-chain endpoint
+- route funds or settle treasury balances
+- do trustless proof verification beyond signer and digest validation
 
-Phase 1 on-chain must do four things well:
+## Design Summary
 
-1. prevent replay by `request_nonce`
-2. verify the provider signer against a registry
-3. verify the provider signature over the attestation payload
-4. store a minimal receipt and challenge lifecycle
+### 1. Dedicated Attestation Program
 
-Phase 1 does not attempt to prove token correctness on-chain and does not own fee routing or treasury movement.
-
-## Design Decisions
-
-### 1. Separate Attestation Program
-
-Use a dedicated program, tentatively named `clawfarm_attestation`, rather than merging this logic into `clawfarm-masterpool`.
+Attestation state is kept separate from `clawfarm-masterpool`.
 
 Reason:
 
-- signer registry, receipt replay protection, and challenge lifecycle are orthogonal to emission-vault logic
-- ABI and account growth for attestation will be much faster than master-pool logic
-- Phase 2 ZK extension should not force unrelated state migration in the vault program
+- signer registry and dispute state have a different growth profile
+- receipt storage and challenge flow should not bloat the pool program
+- future proof modes can evolve without migrating vault logic
 
 ### 2. Structured Receipt Args + Canonical Hash Rebuild
 
-`submit_receipt` should receive structured receipt fields, not just a raw opaque blob.
-
-The program should:
-
-- rebuild the canonical Phase 1 payload from instruction args
-- deterministically encode it using the same CBOR rules as AIRouter
-- compute `sha256(canonical_cbor_bytes)`
-- require that the digest matches `receipt_hash`
-- require an `ed25519` verify instruction over that digest
+`submit_receipt` accepts a structured `SubmitReceiptArgs`, rebuilds the Phase 1
+canonical CBOR payload on-chain, hashes it with `sha256`, and requires the
+result to match `receipt_hash`.
 
 Reason:
 
-- replay protection only works if `request_nonce` is cryptographically bound to the signed payload
-- passing only `receipt_hash` would force the program to trust the off-chain service for payload binding
-- AIRouter Phase 1 payload is scalar-only and still small enough to justify an in-program canonical encoder
+- `request_nonce` replay protection must be cryptographically bound to the
+  signed payload
+- the program must not trust an off-chain service to compute the only binding
+  hash
 
-### 3. Minimal On-Chain Storage
+### 3. ReceiptLite On-Chain Storage
 
-Store the minimal fields needed for replay protection, audit correlation, and challenge handling:
+Phase 1 stores only the minimal fields needed to anchor and adjudicate a
+receipt:
 
-- `request_nonce`
-- `proof_id`
-- `provider`
-- `model`
-- `proof_mode`
-- `attester_type`
-- `usage_basis`
-- token counts
-- `charge_atomic`
-- `charge_mint`
 - `receipt_hash`
 - `signer`
-- `proof_url_hash`
-- lifecycle timestamps and status
+- `submitted_at`
+- `challenge_deadline`
+- `finalized_at`
+- `status`
+- `bump`
 
-Do not store the full proof bundle or transparency-log inclusion proof on-chain in Phase 1.
-
-### 4. Governance-Driven Challenge Resolution
-
-Phase 1 challenge resolution is authority-driven, not fully trustless.
+The full receipt body is expected to live off-chain, for example in Clawfarm
+managed S3 storage.
 
 Reason:
 
-- AIRouter protocol already recommends governance-driven adjudication in v1
-- log inclusion disputes and off-chain bundle parsing are better handled off-chain first
+- on-chain rent dominates cost; large strings are not worth storing twice
+- the digest is enough to bind off-chain content to an on-chain state machine
+
+### 4. Single-Path Terminal Resolution
+
+Once a receipt leaves the active dispute state, it goes directly to a terminal
+state:
+
+- unchallenged and window elapsed: `Finalized`
+- challenge rejected: `Finalized`
+- challenge accepted: `Rejected` or `Slashed`
+
+It does not return to `Submitted`.
+
+Reason:
+
+- the protocol only needs one adjudicated outcome per receipt
+- this lets the account be closed immediately after the terminal result is
+  observed
+
+### 5. Explicit Rent Reclaim
+
+Phase 1 includes `close_challenge` and `close_receipt`.
+
+Reason:
+
+- the transaction fee on Solana is small
+- the real cost is account rent held by `Receipt` and `Challenge`
+- reclaiming rent after terminal state is the main cost optimization
 
 ## Program State
 
@@ -108,16 +118,21 @@ Fields:
 - `is_paused: bool`
 - `phase2_enabled: bool`
 - `bump: u8`
+- `reserved: [u8; 32]`
 
 Purpose:
 
-- global governance and lifecycle settings
+- global governance and timing configuration
+
+Notes:
+
+- current runtime only checks `is_paused` inside `submit_receipt`
 
 ## PDA: `ProviderSigner`
 
 Seed:
 
-- `["provider_signer", provider_code_hash[32], signer_pubkey]`
+- `["provider_signer", sha256(provider_code), signer_pubkey]`
 
 Fields:
 
@@ -132,59 +147,40 @@ Fields:
 - `created_at: i64`
 - `updated_at: i64`
 - `bump: u8`
-
-Status:
-
-- `0 = inactive`
-- `1 = active`
-- `2 = revoked`
+- `reserved: [u8; 32]`
 
 Purpose:
 
-- signer registry keyed by provider + signer
+- signer registry keyed by provider code and signer public key
 
 ## PDA: `Receipt`
 
 Seed:
 
-- `["receipt", request_nonce_hash[32]]`
+- `["receipt", sha256(request_nonce)]`
 
 Fields:
 
-- `request_nonce: String`
-- `proof_id: String`
-- `provider: String`
-- `model: String`
-- `proof_mode: u8`
-- `attester_type: u8`
-- `usage_basis: u8`
-- `prompt_tokens: u64`
-- `completion_tokens: u64`
-- `total_tokens: u64`
-- `charge_atomic: u64`
-- `charge_mint: Pubkey`
 - `receipt_hash: [u8; 32]`
 - `signer: Pubkey`
-- `proof_url_hash: [u8; 32]`
 - `submitted_at: i64`
 - `challenge_deadline: i64`
 - `finalized_at: i64`
 - `status: u8`
 - `bump: u8`
 
-Status:
+Purpose:
 
-- `0 = submitted`
-- `1 = challenged`
-- `2 = finalized`
-- `3 = rejected`
-- `4 = slashed`
+- replay lock keyed by `request_nonce`
+- on-chain anchor for an off-chain canonical receipt
+- lifecycle state for challenge and close
 
 Notes:
 
-- `request_nonce` should still be stored in cleartext for auditability and service correlation
-- `proof_url_hash = sha256(proof_url_utf8_bytes)`
-- `charge_atomic` is parsed on submit from the decimal string in AIRouter and normalized to `u64`
+- `request_nonce` is not stored in the account; it survives only in PDA derivation
+- `proof_id`, `provider`, `model`, token counts, and `proof_url` stay off-chain
+- `ReceiptSubmitted` event still exposes `request_nonce`, `proof_id`, and `provider`
+  for indexing convenience
 
 ## PDA: `Challenge`
 
@@ -194,7 +190,6 @@ Seed:
 
 Fields:
 
-- `request_nonce: String`
 - `receipt: Pubkey`
 - `challenger: Pubkey`
 - `challenge_type: u8`
@@ -207,70 +202,90 @@ Fields:
 - `resolution_code: u8`
 - `bump: u8`
 
-Status:
+Purpose:
 
-- `0 = open`
-- `1 = responded`
-- `2 = accepted`
-- `3 = rejected`
-- `4 = expired`
+- store one challenger-specific dispute against one receipt and one challenge type
+
+Notes:
+
+- `request_nonce` is not stored; it is only used to derive the receipt PDA
 
 ## Enum Mapping
 
-### `proof_mode`
+### `ProofMode`
 
-- `0 = sig_log`
+- `0 = SigLog`
+- `1 = SigLogZkReserved`
 
-Phase 1 rejects every other mode.
+Phase 1 accepts only `0`.
 
-### `attester_type`
+### `AttesterType`
 
-- `0 = provider`
-- `1 = gateway`
-- `2 = hybrid`
+- `0 = Provider`
+- `1 = Gateway`
+- `2 = Hybrid`
 
-### `usage_basis`
+### `UsageBasis`
 
-- `0 = provider_reported`
-- `1 = server_estimated` reserved for later
-- `2 = hybrid` reserved for later
-- `3 = tokenizer_verified` reserved for later
+- `0 = ProviderReported`
+- `1 = ServerEstimatedReserved`
+- `2 = HybridReserved`
+- `3 = TokenizerVerifiedReserved`
 
-Phase 1 runtime should only accept `provider_reported`.
+Phase 1 accepts only `0`.
 
-Reason:
+### `SignerStatus`
 
-- AIRouter currently has a schema drift between the protocol/schema docs and the Go shared types
-- current Unipass settlement flow is naturally `provider_reported`
-- freezing one accepted value keeps the first implementation auditable while leaving enum space open
+- `0 = Inactive`
+- `1 = Active`
+- `2 = Revoked`
 
-### `challenge_type`
+### `ReceiptStatus`
 
-Initial Phase 1 values:
+- `0 = Submitted`
+- `1 = Challenged`
+- `2 = Finalized`
+- `3 = Rejected`
+- `4 = Slashed`
 
-- `0 = invalid_signature`
-- `1 = signer_registry_mismatch`
-- `2 = replay_nonce`
-- `3 = invalid_log_inclusion`
-- `4 = payload_mismatch`
+### `ChallengeStatus`
 
-### `resolution_code`
+- `0 = Open`
+- `1 = Responded`
+- `2 = Accepted`
+- `3 = Rejected`
+- `4 = Expired`
 
-- `0 = none`
-- `1 = accepted`
-- `2 = rejected`
-- `3 = receipt_invalidated`
-- `4 = signer_revoked`
+Note:
 
-## Phase 1 Instruction Set
+- `Expired` exists in the enum space but Phase 1 does not currently implement an
+  instruction that transitions into it
+
+### `ChallengeType`
+
+- `0 = InvalidSignature`
+- `1 = SignerRegistryMismatch`
+- `2 = ReplayNonce`
+- `3 = InvalidLogInclusion`
+- `4 = PayloadMismatch`
+
+### `ResolutionCode`
+
+- `0 = None`
+- `1 = Accepted`
+- `2 = Rejected`
+- `3 = ReceiptInvalidated`
+- `4 = SignerRevoked`
+
+## Instruction Set
 
 ## 1. `initialize_config`
 
 Purpose:
 
-- create the global config
+- create the global config PDA
 
-Suggested signature:
+Signature:
 
 ```rust
 pub fn initialize_config(
@@ -285,16 +300,23 @@ pub fn initialize_config(
 
 Checks:
 
-- config does not already exist
-- all durations are positive
+- `challenge_window_seconds > 0`
+- `response_window_seconds > 0`
+
+Effects:
+
+- creates `Config`
+- initializes counters to zero
+- sets `is_paused = false`
+- sets `phase2_enabled = false`
 
 ## 2. `upsert_provider_signer`
 
 Purpose:
 
-- add or update a provider signer registry entry
+- create or update a provider signer registry entry
 
-Suggested signature:
+Signature:
 
 ```rust
 pub fn upsert_provider_signer(
@@ -311,46 +333,45 @@ pub fn upsert_provider_signer(
 
 Checks:
 
-- only config authority
-- `provider_code` non-empty
-- `valid_until == 0 || valid_until >= valid_from`
+- only `config.authority`
+- valid `provider_code`
+- valid `key_id`
 - `attester_type_mask != 0`
+- `valid_until == 0 || valid_until >= valid_from`
 
 Effects:
 
 - creates or updates `ProviderSigner`
-- marks status active
+- forces status to `Active`
+- preserves `created_at` on updates
 
 ## 3. `set_pause`
 
 Purpose:
 
-- pause or unpause receipt submission and challenge mutations
+- update `config.is_paused`
 
-Suggested signature:
+Signature:
 
 ```rust
-pub fn set_pause(
-    ctx: Context<SetPause>,
-    is_paused: bool,
-) -> Result<()>
+pub fn set_pause(ctx: Context<SetPause>, is_paused: bool) -> Result<()>
 ```
 
 Checks:
 
-- only `pause_authority`
+- only `config.pause_authority`
 
 Effects:
 
-- updates `config.is_paused`
+- sets `config.is_paused`
 
 ## 4. `revoke_provider_signer`
 
 Purpose:
 
-- deactivate a signer without deleting history
+- revoke a signer without deleting history
 
-Suggested signature:
+Signature:
 
 ```rust
 pub fn revoke_provider_signer(
@@ -362,11 +383,12 @@ pub fn revoke_provider_signer(
 
 Checks:
 
-- only config authority
+- only `config.authority`
+- signer PDA fields match provided `provider_code` and `signer`
 
 Effects:
 
-- sets signer status to revoked
+- sets signer status to `Revoked`
 
 ## 5. `submit_receipt`
 
@@ -374,10 +396,9 @@ Purpose:
 
 - verify and record a provider attestation receipt
 
-Suggested args:
+Args:
 
 ```rust
-#[derive(AnchorSerialize, AnchorDeserialize, Clone)]
 pub struct SubmitReceiptArgs {
     pub version: u8,
     pub proof_mode: u8,
@@ -404,49 +425,35 @@ pub struct SubmitReceiptArgs {
 }
 ```
 
-Suggested signature:
-
-```rust
-pub fn submit_receipt(
-    ctx: Context<SubmitReceipt>,
-    args: SubmitReceiptArgs,
-) -> Result<()>
-```
-
 Checks:
 
-- config not paused
+- program not paused
 - `version == 1`
-- `proof_mode == sig_log`
-- token arithmetic is valid
-- `request_nonce` format is valid
-- receipt PDA does not already exist
-- signer registry entry exists and is active
-- signer registry provider matches `provider`
-- signer is valid for `attester_type`
-- `issued_at` and `expires_at` are coherent
-- deterministic CBOR rebuild hashes to `receipt_hash`
-- the immediately preceding `ed25519` instruction verifies `signature` by `signer` over raw `receipt_hash`
+- `proof_mode == SigLog`
+- `usage_basis == ProviderReported`
+- `total_tokens == prompt_tokens + completion_tokens`
+- string caps and format validation succeed
+- provider signer exists and is active
+- signer registry matches `provider`, `signer`, and `attester_type`
+- signer validity window includes `now`
+- on-chain canonical CBOR rebuild hashes to `receipt_hash`
+- preceding `ed25519` verify instruction matches `signer`, `signature`, and `receipt_hash`
 
 Effects:
 
 - creates `Receipt`
-- sets status `submitted`
+- stores only minimal anchor fields
+- sets `status = Submitted`
 - sets `challenge_deadline = now + challenge_window_seconds`
-- increments `receipt_count`
-
-Implementation note:
-
-- on-chain verification should use instruction introspection against the `ed25519_program`
-- `signature` should still be stored in the instruction args for the introspection check, but does not need to remain in the account after successful submission
+- increments `config.receipt_count`
 
 ## 6. `open_challenge`
 
 Purpose:
 
-- open a dispute for an existing receipt
+- open a dispute for an active receipt
 
-Suggested signature:
+Signature:
 
 ```rust
 pub fn open_challenge(
@@ -459,56 +466,57 @@ pub fn open_challenge(
 
 Checks:
 
-- receipt exists
-- receipt status is `submitted` or `challenged`
-- challenge window still open
-- duplicate open challenge by same challenger and same type does not already exist
+- `request_nonce` format is valid
+- `challenge_type` is valid
+- receipt PDA exists
+- receipt status is `Submitted`
+- current time is not past `challenge_deadline`
 
 Effects:
 
 - creates `Challenge`
-- marks receipt `challenged`
-- increments `challenge_count`
-
-Phase 1 implementation note:
-
-- only one active challenge is allowed per receipt at a time
-- a new challenge can only be opened while receipt status is `submitted`
+- sets `challenge.status = Open`
+- sets `receipt.status = Challenged`
+- increments `config.challenge_count`
 
 ## 7. `respond_challenge`
 
 Purpose:
 
-- attach provider or resolver response evidence
+- attach resolver-side response evidence to an open challenge
 
-Suggested signature:
+Signature:
 
 ```rust
 pub fn respond_challenge(
     ctx: Context<RespondChallenge>,
     request_nonce: String,
     challenge_type: u8,
+    challenger: Pubkey,
     response_hash: [u8; 32],
 ) -> Result<()>
 ```
 
 Checks:
 
-- challenge exists and is open
-- caller is governance-authorized in Phase 1 (`authority` or `challenge_resolver`)
+- `request_nonce` format is valid
+- `challenge_type` is valid
+- caller is `config.authority` or `config.challenge_resolver`
+- targeted challenge is still `Open`
+- current time is not past `response_deadline`
 
 Effects:
 
-- writes `response_hash`
-- marks challenge `responded`
+- sets `response_hash`
+- sets `challenge.status = Responded`
 
 ## 8. `resolve_challenge`
 
 Purpose:
 
-- finalize challenge outcome
+- finalize a challenge and move the receipt directly into terminal state
 
-Suggested signature:
+Signature:
 
 ```rust
 pub fn resolve_challenge(
@@ -522,24 +530,34 @@ pub fn resolve_challenge(
 
 Checks:
 
-- only `challenge_resolver`
-- challenge exists and is open or responded
-- resolution code is valid
+- only `config.challenge_resolver`
+- `request_nonce` format is valid
+- `challenge_type` is valid
+- `resolution_code` is valid and not `None`
+- challenge is `Open` or `Responded`
 
 Effects:
 
-- marks challenge accepted or rejected
-- updates receipt status
-- if accepted, receipt becomes `rejected` or `slashed`
-- if rejected and no remaining open challenge, receipt returns to `submitted`
+- if `resolution_code` is `Accepted` or `ReceiptInvalidated`
+  - `challenge.status = Accepted`
+  - `receipt.status = Rejected`
+  - `receipt.finalized_at = now`
+- if `resolution_code` is `SignerRevoked`
+  - `challenge.status = Accepted`
+  - `receipt.status = Slashed`
+  - `receipt.finalized_at = now`
+- if `resolution_code` is `Rejected`
+  - `challenge.status = Rejected`
+  - `receipt.status = Finalized`
+  - `receipt.finalized_at = now`
 
 ## 9. `finalize_receipt`
 
 Purpose:
 
-- move an uncontested receipt to final state
+- finalize an uncontested receipt after the challenge window ends
 
-Suggested signature:
+Signature:
 
 ```rust
 pub fn finalize_receipt(
@@ -550,136 +568,180 @@ pub fn finalize_receipt(
 
 Checks:
 
-- receipt exists
-- receipt status is `submitted`
-- challenge window elapsed
-- no open challenge exists
-- no accepted challenge exists
+- `request_nonce` format is valid
+- receipt status is `Submitted`
+- current time is greater than `challenge_deadline`
 
 Effects:
 
-- marks receipt `finalized`
-- records `finalized_at`
+- sets `receipt.status = Finalized`
+- sets `receipt.finalized_at = now`
 
-## Validation Path
+## 10. `close_challenge`
 
-The intended submit path is:
+Purpose:
 
-1. AIRouter validates the capsule shape off-chain.
-2. The external Solana service rebuilds canonical CBOR and `receipt_hash`.
-3. The service creates an `ed25519` verify instruction for `signer` and `receipt_hash`.
-4. The service invokes `submit_receipt`.
-5. The program:
-   - rebuilds canonical CBOR again
-   - recomputes `receipt_hash`
-   - introspects the `ed25519` instruction
-   - checks signer registry
-   - checks replay by `request_nonce`
-   - stores the receipt
+- reclaim rent from a terminal challenge account
 
-This keeps the program authoritative for replay and signature validity while keeping proof bundle retrieval fully off-chain.
+Signature:
 
-## Canonical Payload Drift Note
+```rust
+pub fn close_challenge(
+    ctx: Context<CloseChallenge>,
+    request_nonce: String,
+    challenge_type: u8,
+    challenger: Pubkey,
+) -> Result<()>
+```
 
-There is one important upstream document drift to freeze explicitly for Phase 1 implementation:
+Checks:
 
-- AIRouter response schema and envelope examples include `proof_url`
-- AIRouter `AttestationPayload` type and canonical CBOR documents do not include `proof_url` in the signed payload
+- `request_nonce` format is valid
+- `challenge_type` is valid
+- challenge status is `Accepted`, `Rejected`, or `Expired`
 
-Phase 1 implementation should follow the current AIRouter payload type and CBOR contract:
+Effects:
 
-- `proof_url` is validated as an instruction field
-- only `proof_url_hash = sha256(proof_url_utf8)` is stored on-chain
-- `proof_url` is not included in the canonical CBOR payload used to recompute `receipt_hash`
+- closes `Challenge`
+- transfers lamports to `recipient`
 
-If AIRouter later decides to sign `proof_url`, that should be treated as a payload-version change rather than a silent Phase 1 behavior change.
+## 11. `close_receipt`
+
+Purpose:
+
+- reclaim rent from a terminal receipt account
+
+Signature:
+
+```rust
+pub fn close_receipt(
+    ctx: Context<CloseReceipt>,
+    request_nonce: String,
+) -> Result<()>
+```
+
+Checks:
+
+- `request_nonce` format is valid
+- receipt status is `Finalized`, `Rejected`, or `Slashed`
+
+Effects:
+
+- closes `Receipt`
+- transfers lamports to `recipient`
+
+## State Transitions
+
+Receipt lifecycle:
+
+```text
+Submitted
+  -> Challenged
+  -> Finalized      (finalize_receipt after window)
+
+Challenged
+  -> Finalized      (challenge rejected)
+  -> Rejected       (challenge accepted / receipt invalidated)
+  -> Slashed        (challenge accepted / signer revoked)
+```
+
+Closable receipt states:
+
+- `Finalized`
+- `Rejected`
+- `Slashed`
+
+Challenge lifecycle:
+
+```text
+Open
+  -> Responded
+  -> Accepted
+  -> Rejected
+
+Responded
+  -> Accepted
+  -> Rejected
+```
+
+Closable challenge states:
+
+- `Accepted`
+- `Rejected`
+- `Expired`
+
+## Canonicalization Contract
+
+The canonical receipt digest is:
+
+- deterministic CBOR map encoding
+- same logical Phase 1 payload fields as the current off-chain schema
+- omitted optional fields are not encoded
+- `receipt_hash = sha256(canonical_cbor_bytes)`
+- `ed25519` signs the raw 32-byte digest
+
+Fields excluded from the signed payload:
+
+- `proof_url`
+- `signer`
+- `signature`
+- `receipt_hash`
+
+`proof_url` is validated as a transport field but not stored on-chain in Phase 1.
+
+## Recommended Off-Chain Storage Flow
+
+The current on-chain design is intended to pair with a Clawfarm managed off-chain
+receipt service, for example backed by S3.
+
+Recommended flow:
+
+1. Provider returns the full receipt body to Clawfarm.
+2. Clawfarm normalizes it into the canonical Phase 1 payload.
+3. Clawfarm computes canonical CBOR and `receipt_hash`.
+4. Clawfarm uploads the canonical receipt object to S3.
+5. Clawfarm submits `submit_receipt` with the structured fields and matching
+   signer verification.
+6. Clawfarm website indexes the receipt by `receipt_hash`, `request_nonce`, and
+   provider-side identifiers.
+7. A challenger retrieves the full receipt from Clawfarm infrastructure, prepares
+   evidence, and submits only evidence hashes on-chain.
+8. After terminal state, Clawfarm closes the `Challenge` and `Receipt` accounts
+   to reclaim rent.
+
+Implications:
+
+- S3 is an availability layer, not the trust anchor
+- the trust anchor is still the on-chain `receipt_hash`
+- receipt authenticity is derived from canonical hash + signer verification
+- rent usage is bounded by the lifetime of the minimal on-chain accounts
 
 ## Account Size Guidance
 
-To keep allocation tractable in v1, impose explicit string caps:
+Current allocation uses `8 + <Account>::INIT_SPACE`.
 
-- `request_nonce <= 128`
-- `proof_id <= 128`
-- `provider <= 64`
-- `model <= 255`
-- `provider_request_id <= 255`
-- `proof_url <= 512`
-- `key_id <= 128`
+Effective sizes in the current implementation:
 
-If a field exceeds the cap, reject submission.
+- `Config = 171 bytes`
+- `ProviderSigner = 339 bytes`
+- `Receipt = 98 bytes`
+- `Challenge = 164 bytes`
+
+This is the main rent reduction relative to the previous design that stored the
+full receipt body on-chain.
 
 ## Events
 
-Recommended events:
+Current events:
 
 - `ConfigInitialized`
 - `ProviderSignerUpserted`
 - `ProviderSignerRevoked`
+- `PauseUpdated`
 - `ReceiptSubmitted`
 - `ReceiptFinalized`
+- `ReceiptClosed`
 - `ChallengeOpened`
 - `ChallengeResponded`
 - `ChallengeResolved`
-
-Each receipt-related event should include:
-
-- `request_nonce`
-- `proof_id`
-- `provider`
-- `receipt_hash`
-- `signer`
-
-## Error Draft
-
-Suggested error names:
-
-- `ErrPaused`
-- `ErrInvalidVersion`
-- `ErrInvalidProofMode`
-- `ErrInvalidNonce`
-- `ErrInvalidProvider`
-- `ErrInvalidAttesterType`
-- `ErrInvalidUsageBasis`
-- `ErrInvalidTokenTotals`
-- `ErrReceiptExpired`
-- `ErrReplayNonce`
-- `ErrSignerNotFound`
-- `ErrSignerInactive`
-- `ErrSignerProviderMismatch`
-- `ErrSignerAttesterTypeMismatch`
-- `ErrReceiptHashMismatch`
-- `ErrEd25519InstructionMissing`
-- `ErrEd25519VerificationMismatch`
-- `ErrReceiptNotChallengeable`
-- `ErrChallengeAlreadyExists`
-- `ErrChallengeWindowClosed`
-- `ErrUnauthorizedResponder`
-- `ErrUnauthorizedResolver`
-- `ErrChallengeResolutionInvalid`
-
-## What Phase 1 Explicitly Does Not Do
-
-- no on-chain proof bundle fetch
-- no on-chain transparency-log verification
-- no ZK verification
-- no treasury transfer or fee split
-- no signer slashing economics
-- no direct lookup PDA by `proof_id`
-
-Those can be added in Phase 2 or in the off-chain service layer.
-
-## Recommended Next Step
-
-Before implementation, the next artifact should be a machine-readable ABI draft:
-
-- `instructions.md` or `idl-sketch.json`
-- enum discriminants frozen
-- exact account space constants frozen
-- exact canonical CBOR field order mirrored in test vectors
-
-Once that is written, implementation can start with:
-
-1. config and signer registry
-2. submit path with `ed25519` introspection
-3. receipt finalization
-4. challenge lifecycle
+- `ChallengeClosed`

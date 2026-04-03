@@ -1,38 +1,32 @@
-# Clawfarm Attestation Phase 1 ABI Draft
+# Clawfarm Attestation Phase 1 ABI
 
-Status: Draft
-Version: v0
+Status: Implemented
+Version: v1
 Last Updated: 2026-04-03
 
-This document freezes the first implementation-oriented ABI for the dedicated `clawfarm_attestation` Solana program.
+This document reflects the current ABI of the dedicated
+`clawfarm_attestation` Solana program in this repository.
 
-It is the next artifact after:
+Reference:
 
 - [clawfarm-attestation-phase1-interface-design.md](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/docs/clawfarm-attestation-phase1-interface-design.md)
 
 ## Phase 1 Freeze
 
-The following are frozen for the first implementation pass:
+The following are frozen in the current implementation:
 
 - dedicated program name: `clawfarm_attestation`
 - accepted `proof_mode`: `sig_log` only
 - accepted `usage_basis`: `provider_reported` only
 - signature algorithm: `ed25519`
 - replay key: `request_nonce`
-- proof bundle handling: off-chain only
+- on-chain receipt shape: `ReceiptLite`
 - challenge resolution: governance-driven
-
-The following are intentionally not frozen yet:
-
-- final program id
-- event field ordering
-- exact error code integers
+- terminal account close flow: enabled
 
 ## Constants
 
 ## String Caps
-
-These caps are enforced at instruction validation time and baked into account space formulas.
 
 ```text
 MAX_REQUEST_NONCE_LEN        = 128
@@ -54,8 +48,6 @@ CHALLENGE_SEED        = "challenge"
 ```
 
 ## Enum Discriminants
-
-These discriminants should not change once implementation starts.
 
 ### `ProofMode`
 
@@ -113,6 +105,10 @@ Phase 1 accepts only `0`.
 4 = expired
 ```
 
+Note:
+
+- `expired` is part of the enum but no current instruction writes it
+
 ### `ChallengeType`
 
 ```text
@@ -135,6 +131,8 @@ Phase 1 accepts only `0`.
 
 ## Account Shapes
 
+All runtime allocations use `8 + <Account>::INIT_SPACE`.
+
 ## `Config`
 
 Logical fields:
@@ -153,16 +151,11 @@ bump: u8
 reserved: [u8; 32]
 ```
 
-Suggested max space:
+Account size:
 
 ```text
-CONFIG_SPACE = 8 + 32 + 32 + 32 + 8 + 8 + 8 + 8 + 1 + 1 + 1 + 32 = 171
-```
-
-Round up to:
-
-```text
-CONFIG_SPACE = 192
+INIT_SPACE = 163
+ALLOCATED  = 171
 ```
 
 ## `ProviderSigner`
@@ -184,30 +177,11 @@ bump: u8
 reserved: [u8; 32]
 ```
 
-Suggested max space:
+Account size:
 
 ```text
-PROVIDER_SIGNER_SPACE =
-  8
-  + 4 + 64
-  + 32
-  + 4 + 128
-  + 1
-  + 1
-  + 8
-  + 8
-  + 32
-  + 8
-  + 8
-  + 1
-  + 32
-= 339
-```
-
-Round up to:
-
-```text
-PROVIDER_SIGNER_SPACE = 384
+INIT_SPACE = 331
+ALLOCATED  = 339
 ```
 
 ## `Receipt`
@@ -215,69 +189,33 @@ PROVIDER_SIGNER_SPACE = 384
 Logical fields:
 
 ```text
-request_nonce: String              // <= 128
-proof_id: String                   // <= 128
-provider: String                   // <= 64
-model: String                      // <= 255
-proof_mode: u8
-attester_type: u8
-usage_basis: u8
-prompt_tokens: u64
-completion_tokens: u64
-total_tokens: u64
-charge_atomic: u64
-charge_mint: Pubkey
 receipt_hash: [u8; 32]
 signer: Pubkey
-proof_url_hash: [u8; 32]
 submitted_at: i64
 challenge_deadline: i64
 finalized_at: i64
 status: u8
 bump: u8
-reserved: [u8; 64]
 ```
 
-Suggested max space:
+Account size:
 
 ```text
-RECEIPT_SPACE =
-  8
-  + 4 + 128
-  + 4 + 128
-  + 4 + 64
-  + 4 + 255
-  + 1
-  + 1
-  + 1
-  + 8
-  + 8
-  + 8
-  + 8
-  + 32
-  + 32
-  + 32
-  + 8
-  + 8
-  + 8
-  + 1
-  + 1
-  + 64
-= 818
+INIT_SPACE = 90
+ALLOCATED  = 98
 ```
 
-Round up to:
+Notes:
 
-```text
-RECEIPT_SPACE = 896
-```
+- this is the Phase 1 `ReceiptLite` shape
+- `request_nonce`, `proof_id`, `provider`, `model`, token counts, and `proof_url`
+  are not stored in the account
 
 ## `Challenge`
 
 Logical fields:
 
 ```text
-request_nonce: String              // <= 128
 receipt: Pubkey
 challenger: Pubkey
 challenge_type: u8
@@ -289,34 +227,13 @@ resolved_at: i64
 status: u8
 resolution_code: u8
 bump: u8
-reserved: [u8; 32]
 ```
 
-Suggested max space:
+Account size:
 
 ```text
-CHALLENGE_SPACE =
-  8
-  + 4 + 128
-  + 32
-  + 32
-  + 1
-  + 32
-  + 32
-  + 8
-  + 8
-  + 8
-  + 1
-  + 1
-  + 1
-  + 32
-= 328
-```
-
-Round up to:
-
-```text
-CHALLENGE_SPACE = 352
+INIT_SPACE = 156
+ALLOCATED  = 164
 ```
 
 ## Instruction ABI
@@ -337,7 +254,7 @@ Accounts:
 
 ```text
 [writable, signer] payer
-[writable]         config_pda
+[writable]         config
 []                 system_program
 ```
 
@@ -358,15 +275,15 @@ metadata_hash: [u8; 32]
 Accounts:
 
 ```text
-[signer]           authority
-[]                 config_pda
-[writable]         provider_signer_pda
+[writable, signer] authority
+[]                 config
+[writable]         provider_signer
 []                 system_program
 ```
 
 Behavior:
 
-- init-if-needed semantics are acceptable
+- `init_if_needed`
 
 ## 3. `set_pause`
 
@@ -380,7 +297,7 @@ Accounts:
 
 ```text
 [signer]           pause_authority
-[writable]         config_pda
+[writable]         config
 ```
 
 ## 4. `revoke_provider_signer`
@@ -396,8 +313,8 @@ Accounts:
 
 ```text
 [signer]           authority
-[]                 config_pda
-[writable]         provider_signer_pda
+[]                 config
+[writable]         provider_signer
 ```
 
 ## 5. `submit_receipt`
@@ -405,44 +322,47 @@ Accounts:
 Args:
 
 ```rust
-version: u8
-proof_mode: u8
-proof_id: String
-request_nonce: String
-provider: String
-attester_type: u8
-model: String
-usage_basis: u8
-prompt_tokens: u64
-completion_tokens: u64
-total_tokens: u64
-charge_atomic: u64
-charge_mint: Pubkey
-provider_request_id: Option<String>
-issued_at: Option<i64>
-expires_at: Option<i64>
-http_status: Option<u16>
-latency_ms: Option<u64>
-proof_url: String
-receipt_hash: [u8; 32]
-signer: Pubkey
-signature: [u8; 64]
+SubmitReceiptArgs {
+  version: u8,
+  proof_mode: u8,
+  proof_id: String,
+  request_nonce: String,
+  provider: String,
+  attester_type: u8,
+  model: String,
+  usage_basis: u8,
+  prompt_tokens: u64,
+  completion_tokens: u64,
+  total_tokens: u64,
+  charge_atomic: u64,
+  charge_mint: Pubkey,
+  provider_request_id: Option<String>,
+  issued_at: Option<i64>,
+  expires_at: Option<i64>,
+  http_status: Option<u16>,
+  latency_ms: Option<u64>,
+  proof_url: String,
+  receipt_hash: [u8; 32],
+  signer: Pubkey,
+  signature: [u8; 64],
+}
 ```
 
 Accounts:
 
 ```text
 [writable, signer] payer
-[]                 config_pda
-[]                 provider_signer_pda
-[writable]         receipt_pda
+[writable]         config
+[]                 provider_signer
+[writable]         receipt
 []                 instructions_sysvar
 []                 system_program
 ```
 
-Additional runtime expectation:
+Runtime expectation:
 
-- the transaction must include the matching `ed25519_program` verify instruction immediately before this instruction
+- the immediately preceding instruction must be the matching `ed25519_program`
+  verify instruction
 
 ## 6. `open_challenge`
 
@@ -458,15 +378,15 @@ Accounts:
 
 ```text
 [writable, signer] challenger
-[]                 config_pda
-[writable]         receipt_pda
-[writable]         challenge_pda
+[writable]         config
+[writable]         receipt
+[writable]         challenge
 []                 system_program
 ```
 
-Phase 1 runtime rule:
+Runtime rule:
 
-- only one active challenge is allowed per receipt at a time
+- receipt must be in `submitted` state
 
 ## 7. `respond_challenge`
 
@@ -483,14 +403,14 @@ Accounts:
 
 ```text
 [signer]           responder
-[]                 config_pda
-[]                 receipt_pda
-[writable]         challenge_pda
+[]                 config
+[]                 receipt
+[writable]         challenge
 ```
 
-Phase 1 responder authorization:
+Authorization:
 
-- `responder` must be `authority` or `challenge_resolver`
+- `responder` must be `config.authority` or `config.challenge_resolver`
 
 ## 8. `resolve_challenge`
 
@@ -507,9 +427,21 @@ Accounts:
 
 ```text
 [signer]           challenge_resolver
-[]                 config_pda
-[writable]         receipt_pda
-[writable]         challenge_pda
+[]                 config
+[writable]         receipt
+[writable]         challenge
+```
+
+Runtime rule:
+
+- `config` must `has_one = challenge_resolver`
+
+Terminal result mapping:
+
+```text
+accepted / receipt_invalidated -> receipt.rejected
+signer_revoked                 -> receipt.slashed
+rejected                       -> receipt.finalized
 ```
 
 ## 9. `finalize_receipt`
@@ -524,54 +456,104 @@ Accounts:
 
 ```text
 [signer]           caller
-[]                 config_pda
-[writable]         receipt_pda
+[]                 config
+[writable]         receipt
 ```
 
-Phase 1 allows any caller because finalization is a deterministic state transition.
+Runtime rule:
 
-Phase 1 finalization only applies when the receipt is back in `submitted` state.
+- any caller may finalize once the challenge window is over and the receipt is
+  still `submitted`
+
+## 10. `close_challenge`
+
+Args:
+
+```rust
+request_nonce: String
+challenge_type: u8
+challenger: Pubkey
+```
+
+Accounts:
+
+```text
+[writable, signer] recipient
+[writable]         receipt
+[writable]         challenge
+```
+
+Runtime rule:
+
+- challenge must already be terminal
+
+## 11. `close_receipt`
+
+Args:
+
+```rust
+request_nonce: String
+```
+
+Accounts:
+
+```text
+[writable, signer] recipient
+[writable]         receipt
+```
+
+Runtime rule:
+
+- receipt must already be terminal
 
 ## Canonicalization Contract
 
-The on-chain canonicalization contract should be:
+The current canonicalization contract is:
 
-- same logical fields as AIRouter canonical payload
+- on-chain rebuild from structured fields
 - deterministic CBOR map encoding
-- omitted optional fields must not appear
+- absent optional fields are omitted
 - `receipt_hash = sha256(canonical_cbor_bytes)`
-- ed25519 signs raw 32-byte digest
+- `ed25519` signs the raw 32-byte digest
 
-Fields intentionally excluded from the signed payload in Phase 1:
+Fields intentionally excluded from the signed payload:
 
-- `signature`
+- `proof_url`
 - `signer`
-- `proof_url_hash`
-
-The current AIRouter payload implementation also excludes `proof_url` itself from the canonical signed payload, even though the outer attestation response schema requires `proof_url`.
-
-Phase 1 therefore treats `proof_url` as a validated transport field and stores only `proof_url_hash`.
+- `signature`
+- `receipt_hash`
 
 ## Validation Rules
 
-`submit_receipt` must reject when:
+`submit_receipt` rejects when:
 
 - `version != 1`
 - `proof_mode != sig_log`
 - `usage_basis != provider_reported`
-- string cap exceeded
+- string caps are exceeded
+- `request_nonce` format is invalid
 - `total_tokens != prompt_tokens + completion_tokens`
-- `expires_at < issued_at`
-- signer registry entry missing or inactive
-- signer registry provider mismatch
-- signer not allowed for `attester_type`
-- `request_nonce` already submitted
-- canonical hash mismatch
-- ed25519 verify instruction missing or mismatched
+- timestamps are inconsistent
+- HTTP status is outside `100..=599`
+- signer registry entry is missing or inactive
+- signer registry provider mismatches
+- signer is not authorized for the requested `attester_type`
+- `request_nonce` PDA already exists
+- canonical hash mismatches
+- `ed25519` verify instruction is missing or mismatched
 
-## Notes for Implementation
+## Events
 
-- PDA derivation for `provider_signer_pda` should hash `provider_code` to a fixed `[u8; 32]` seed component
-- PDA derivation for `receipt_pda` should hash `request_nonce` to a fixed `[u8; 32]` seed component
-- `charge_atomic` is frozen to `u64` in Phase 1; if larger domains become necessary later, add a new instruction version instead of silently changing the type
-- if the team prefers to avoid a full CBOR implementation on-chain, Phase 1 can move canonical rebuild into the off-chain service only, but that materially weakens the trust boundary and is not recommended
+Current events:
+
+- `ConfigInitialized`
+- `ProviderSignerUpserted`
+- `ProviderSignerRevoked`
+- `PauseUpdated`
+- `ReceiptSubmitted`
+- `ReceiptFinalized`
+- `ReceiptClosed`
+- `ChallengeOpened`
+- `ChallengeResponded`
+- `ChallengeResolved`
+- `ChallengeClosed`
