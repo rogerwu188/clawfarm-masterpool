@@ -16,10 +16,9 @@
     "MAX_PROOF_ID_LEN": 128,
     "MAX_PROVIDER_LEN": 64,
     "MAX_MODEL_LEN": 255,
-    "MAX_KEY_ID_LEN": 128,
     "MAX_PROVIDER_REQUEST_ID_LEN": 255,
     "CONFIG_ALLOCATED": 113,
-    "PROVIDER_SIGNER_ALLOCATED": 306,
+    "PROVIDER_SIGNER_ALLOCATED": 26,
     "RECEIPT_ALLOCATED": 97,
     "CHALLENGE_ALLOCATED": 123
   },
@@ -108,27 +107,13 @@
       ]
     },
     "ProviderSigner": {
-      "allocated": 306,
+      "allocated": 26,
       "seeds": [
         "provider_signer",
         "provider_code_hash",
         "signer_pubkey"
       ],
       "fields": [
-        {
-          "name": "provider_code",
-          "type": "string",
-          "max_len": 64
-        },
-        {
-          "name": "signer",
-          "type": "pubkey"
-        },
-        {
-          "name": "key_id",
-          "type": "string",
-          "max_len": 128
-        },
         {
           "name": "attester_type_mask",
           "type": "u8"
@@ -144,23 +129,6 @@
         },
         {
           "name": "valid_until",
-          "type": "i64"
-        },
-        {
-          "name": "metadata_hash",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
-        },
-        {
-          "name": "created_at",
-          "type": "i64"
-        },
-        {
-          "name": "updated_at",
           "type": "i64"
         }
       ]
@@ -322,11 +290,6 @@
           "type": "pubkey"
         },
         {
-          "name": "key_id",
-          "type": "string",
-          "max_len": 128
-        },
-        {
           "name": "attester_type_mask",
           "type": "u8"
         },
@@ -337,15 +300,6 @@
         {
           "name": "valid_until",
           "type": "i64"
-        },
-        {
-          "name": "metadata_hash",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
         }
       ]
     },
@@ -399,13 +353,12 @@
       "name": "submit_receipt",
       "accounts": [
         {
-          "name": "payer",
+          "name": "authority",
           "writable": true,
           "signer": true
         },
         {
-          "name": "config",
-          "writable": true
+          "name": "config"
         },
         {
           "name": "provider_signer"
@@ -504,9 +457,11 @@
       "name": "close_challenge",
       "accounts": [
         {
-          "name": "recipient",
-          "writable": true,
+          "name": "authority",
           "signer": true
+        },
+        {
+          "name": "config"
         },
         {
           "name": "challenge",
@@ -519,9 +474,11 @@
       "name": "close_receipt",
       "accounts": [
         {
-          "name": "recipient",
-          "writable": true,
+          "name": "authority",
           "signer": true
+        },
+        {
+          "name": "config"
         },
         {
           "name": "receipt",

@@ -9,8 +9,8 @@ use solana_sha256_hasher::hash;
 
 use crate::{
     constants::{
-        MAX_KEY_ID_LEN, MAX_MODEL_LEN, MAX_PROOF_ID_LEN, MAX_PROVIDER_LEN,
-        MAX_PROVIDER_REQUEST_ID_LEN, MAX_REQUEST_NONCE_LEN,
+        MAX_MODEL_LEN, MAX_PROOF_ID_LEN, MAX_PROVIDER_LEN, MAX_PROVIDER_REQUEST_ID_LEN,
+        MAX_REQUEST_NONCE_LEN,
     },
     error::ErrorCode,
     state::{AttesterType, ProofMode, SubmitReceiptArgs, UsageBasis},
@@ -104,14 +104,6 @@ pub(crate) fn validate_model(value: &str) -> Result<()> {
     require!(
         !value.is_empty() && value.len() <= MAX_MODEL_LEN,
         ErrorCode::InvalidModel
-    );
-    Ok(())
-}
-
-pub(crate) fn validate_key_id(value: &str) -> Result<()> {
-    require!(
-        !value.is_empty() && value.len() <= MAX_KEY_ID_LEN,
-        ErrorCode::StringTooLong
     );
     Ok(())
 }

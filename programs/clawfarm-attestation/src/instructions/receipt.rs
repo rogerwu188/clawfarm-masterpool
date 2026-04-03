@@ -26,14 +26,6 @@ pub fn submit_receipt(ctx: Context<SubmitReceipt>, args: SubmitReceiptArgs) -> R
         ErrorCode::SignerInactive
     );
     require!(
-        provider_signer.signer == args.signer,
-        ErrorCode::SignerMismatch
-    );
-    require!(
-        provider_signer.provider_code == args.provider,
-        ErrorCode::ProviderMismatch
-    );
-    require!(
         provider_signer.attester_type_mask & attester_type_mask(args.attester_type) != 0,
         ErrorCode::SignerAttesterTypeMismatch
     );
@@ -68,11 +60,13 @@ pub fn submit_receipt(ctx: Context<SubmitReceipt>, args: SubmitReceiptArgs) -> R
     receipt.status = ReceiptStatus::Submitted as u8;
 
     emit!(ReceiptSubmitted {
+        receipt: receipt.key(),
         request_nonce: args.request_nonce,
         proof_id: args.proof_id,
         provider: args.provider,
         signer: args.signer,
         receipt_hash: args.receipt_hash,
+        challenge_deadline: receipt.challenge_deadline,
     });
     Ok(())
 }
@@ -130,9 +124,10 @@ fn is_terminal_receipt_status(status: u8) -> bool {
 #[instruction(args: SubmitReceiptArgs)]
 pub struct SubmitReceipt<'info> {
     #[account(mut)]
-    pub payer: Signer<'info>,
+    pub authority: Signer<'info>,
     #[account(
         seeds = [CONFIG_SEED],
+        has_one = authority,
         bump
     )]
     pub config: Account<'info, Config>,
@@ -147,7 +142,7 @@ pub struct SubmitReceipt<'info> {
     pub provider_signer: Account<'info, ProviderSigner>,
     #[account(
         init,
-        payer = payer,
+        payer = authority,
         space = 8 + Receipt::INIT_SPACE,
         seeds = [RECEIPT_SEED, &request_nonce_seed(args.request_nonce.as_str())],
         bump
@@ -167,11 +162,16 @@ pub struct FinalizeReceipt<'info> {
 
 #[derive(Accounts)]
 pub struct CloseReceipt<'info> {
-    #[account(mut)]
-    pub recipient: Signer<'info>,
+    pub authority: Signer<'info>,
+    #[account(
+        seeds = [CONFIG_SEED],
+        has_one = authority,
+        bump
+    )]
+    pub config: Account<'info, Config>,
     #[account(
         mut,
-        close = recipient
+        close = authority
     )]
     pub receipt: Account<'info, Receipt>,
 }

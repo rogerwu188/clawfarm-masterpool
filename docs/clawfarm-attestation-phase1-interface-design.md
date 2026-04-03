@@ -129,20 +129,14 @@ Seed:
 
 Fields:
 
-- `provider_code: String`
-- `signer: Pubkey`
-- `key_id: String`
 - `attester_type_mask: u8`
 - `status: u8`
 - `valid_from: i64`
 - `valid_until: i64`
-- `metadata_hash: [u8; 32]`
-- `created_at: i64`
-- `updated_at: i64`
 
 Purpose:
 
-- signer registry keyed by provider code and signer public key
+- minimal signer policy keyed by provider code and signer public key
 
 ## PDA: `Receipt`
 
@@ -169,8 +163,8 @@ Notes:
 
 - `request_nonce` is not stored in the account; it survives only in PDA derivation
 - `proof_id`, `provider`, `model`, and detailed usage metadata stay off-chain
-- `ReceiptSubmitted` event still exposes `request_nonce`, `proof_id`, and `provider`
-  for indexing convenience
+- `ReceiptSubmitted` event still exposes `request_nonce`, `proof_id`, and `provider`,
+  and now also emits `receipt` plus `challenge_deadline` for bot indexing
 
 ## PDA: `Challenge`
 
@@ -305,11 +299,9 @@ pub fn upsert_provider_signer(
     ctx: Context<UpsertProviderSigner>,
     provider_code: String,
     signer: Pubkey,
-    key_id: String,
     attester_type_mask: u8,
     valid_from: i64,
     valid_until: i64,
-    metadata_hash: [u8; 32],
 ) -> Result<()>
 ```
 
@@ -317,15 +309,14 @@ Checks:
 
 - only `config.authority`
 - valid `provider_code`
-- valid `key_id`
 - `attester_type_mask != 0`
 - `valid_until == 0 || valid_until >= valid_from`
 
 Effects:
 
 - creates or updates `ProviderSigner`
+- writes only the minimal signer policy fields
 - forces status to `Active`
-- preserves `created_at` on updates
 
 ## 3. `set_pause`
 
@@ -366,7 +357,7 @@ pub fn revoke_provider_signer(
 Checks:
 
 - only `config.authority`
-- signer PDA fields match provided `provider_code` and `signer`
+- signer PDA is derived from the provided `provider_code` and `signer`
 
 Effects:
 
@@ -413,8 +404,8 @@ Checks:
 - `usage_basis == ProviderReported`
 - `total_tokens == prompt_tokens + completion_tokens`
 - string caps and format validation succeed
-- provider signer exists and is active
-- signer registry matches `provider`, `signer`, and `attester_type`
+- only `config.authority`
+- provider signer PDA derived from `provider` and `signer` exists and is active
 - signer validity window includes `now`
 - on-chain canonical CBOR rebuild hashes to `receipt_hash`
 - preceding `ed25519` verify instruction matches `signer` and `receipt_hash`
@@ -425,6 +416,7 @@ Effects:
 - stores only minimal anchor fields
 - sets `status = Submitted`
 - sets `challenge_deadline = now + challenge_window_seconds`
+- emits `ReceiptSubmitted` with `receipt` and `challenge_deadline`
 
 ## 6. `open_challenge`
 
@@ -527,12 +519,13 @@ pub fn close_challenge(ctx: Context<CloseChallenge>) -> Result<()>
 
 Checks:
 
+- only `config.authority`
 - challenge status is `Accepted`, `Rejected`, or `Expired`
 
 Effects:
 
 - closes `Challenge`
-- transfers lamports to `recipient`
+- transfers lamports to `authority`
 
 ## 10. `close_receipt`
 
@@ -548,12 +541,13 @@ pub fn close_receipt(ctx: Context<CloseReceipt>) -> Result<()>
 
 Checks:
 
+- only `config.authority`
 - receipt status is `Finalized`, `Rejected`, or `Slashed`
 
 Effects:
 
 - closes `Receipt`
-- transfers lamports to `recipient`
+- transfers lamports to `authority`
 
 ## State Transitions
 
@@ -624,8 +618,34 @@ Recommended flow:
    provider-side identifiers.
 7. A challenger retrieves the full receipt from Clawfarm infrastructure, prepares
    evidence, and submits only evidence hashes on-chain.
-8. After terminal state, Clawfarm closes the `Challenge` and `Receipt` accounts
-   to reclaim rent.
+8. The resolver bot watches the emitted receipt and challenge events, tracks live
+   receipts by `receipt` pubkey, and schedules either dispute resolution or
+   uncontested finalization at `challenge_deadline`.
+9. After terminal state, `config.authority` closes the `Challenge` and `Receipt`
+   accounts to reclaim rent.
+
+## Resolver Bot Loop
+
+Recommended event-driven loop:
+
+1. Subscribe to `ReceiptSubmitted`, `ChallengeOpened`, `ChallengeResolved`,
+   `ReceiptFinalized`, and `ReceiptClosed`.
+2. Use `ReceiptSubmitted.receipt` plus `challenge_deadline` as the primary live
+   queue for open receipts.
+3. Attach challenge jobs when `ChallengeOpened` arrives for a tracked receipt.
+4. Fetch the full canonical receipt object and challenge evidence from off-chain
+   storage, then derive one deterministic `resolution_code`.
+5. Submit `resolve_challenge` from `config.challenge_resolver` for disputed
+   receipts, or call `finalize_receipt` when an uncontested receipt reaches
+   `challenge_deadline`.
+6. Once a receipt or challenge is terminal, let `config.authority` run the close
+   instructions and remove the item from the bot's live queue.
+
+Cold-start recovery:
+
+- replay `ReceiptSubmitted` first, then fold in `ChallengeOpened`,
+  `ChallengeResolved`, `ReceiptFinalized`, and `ReceiptClosed`
+- rebuild the live queue keyed by `receipt` pubkey instead of scanning every PDA
 
 Implications:
 
@@ -641,7 +661,7 @@ Current allocation uses `8 + <Account>::INIT_SPACE`.
 Effective sizes in the current implementation:
 
 - `Config = 113 bytes`
-- `ProviderSigner = 306 bytes`
+- `ProviderSigner = 26 bytes`
 - `Receipt = 97 bytes`
 - `Challenge = 123 bytes`
 

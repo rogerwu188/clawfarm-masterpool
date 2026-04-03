@@ -157,11 +157,16 @@ pub struct ResolveChallenge<'info> {
 
 #[derive(Accounts)]
 pub struct CloseChallenge<'info> {
-    #[account(mut)]
-    pub recipient: Signer<'info>,
+    pub authority: Signer<'info>,
+    #[account(
+        seeds = [CONFIG_SEED],
+        has_one = authority,
+        bump
+    )]
+    pub config: Account<'info, Config>,
     #[account(
         mut,
-        close = recipient
+        close = authority
     )]
     pub challenge: Account<'info, Challenge>,
 }

@@ -1,7 +1,5 @@
 use anchor_lang::prelude::*;
 
-use crate::constants::{MAX_KEY_ID_LEN, MAX_PROVIDER_LEN};
-
 #[account]
 #[derive(InitSpace)]
 pub struct Config {
@@ -15,18 +13,10 @@ pub struct Config {
 #[account]
 #[derive(InitSpace)]
 pub struct ProviderSigner {
-    #[max_len(MAX_PROVIDER_LEN)]
-    pub provider_code: String,
-    pub signer: Pubkey,
-    #[max_len(MAX_KEY_ID_LEN)]
-    pub key_id: String,
     pub attester_type_mask: u8,
     pub status: u8,
     pub valid_from: i64,
     pub valid_until: i64,
-    pub metadata_hash: [u8; 32],
-    pub created_at: i64,
-    pub updated_at: i64,
 }
 
 #[account]

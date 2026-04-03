@@ -24,7 +24,6 @@ describe("clawfarm-attestation", () => {
   const pauseAuthority = wallet.publicKey;
   const challengeResolver = wallet.publicKey;
   const providerCode = "unipass";
-  const keyId = "phase1-key-1";
   const attesterType = 1;
   const attesterTypeMask = 1 << attesterType;
   const challengeType = 4;
@@ -82,11 +81,9 @@ describe("clawfarm-attestation", () => {
       .upsertProviderSigner(
         providerCode,
         providerSigner.publicKey,
-        keyId,
         attesterTypeMask,
         new BN(0),
-        new BN(0),
-        Array.from(new Uint8Array(32))
+        new BN(0)
       )
       .accounts({
         authority,
@@ -99,8 +96,6 @@ describe("clawfarm-attestation", () => {
     const signerAccount = await program.account.providerSigner.fetch(
       providerSignerPda
     );
-    assert.equal(signerAccount.providerCode, providerCode);
-    assert.ok(signerAccount.signer.equals(providerSigner.publicKey));
     assert.equal(signerAccount.status, 1);
     assert.equal(signerAccount.attesterTypeMask, attesterTypeMask);
   });
@@ -112,7 +107,7 @@ describe("clawfarm-attestation", () => {
     const ix = await program.methods
       .submitReceipt(submit)
       .accounts({
-        payer: wallet.publicKey,
+        authority: wallet.publicKey,
         config: configPda,
         providerSigner: providerSignerPda,
         receipt: receiptPda,
@@ -125,6 +120,33 @@ describe("clawfarm-attestation", () => {
     await expectAnchorError(
       provider.sendAndConfirm(tx),
       "MissingEd25519Instruction"
+    );
+  });
+
+  it("rejects submit_receipt from a non-authority signer", async () => {
+    const requestNonce = "cfn_submit_auth_001";
+    const submit = makeSubmitArgs(requestNonce);
+    const receiptPda = deriveReceiptPda(submit.requestNonce);
+    const ed25519Ix = Ed25519Program.createInstructionWithPrivateKey({
+      privateKey: providerSigner.secretKey,
+      message: Uint8Array.from(submit.receiptHash),
+    });
+    const submitIx = await program.methods
+      .submitReceipt(submit)
+      .accounts({
+        authority: outsider.publicKey,
+        config: configPda,
+        providerSigner: providerSignerPda,
+        receipt: receiptPda,
+        instructionsSysvar: SYSVAR_INSTRUCTIONS_PUBKEY,
+        systemProgram: SystemProgram.programId,
+      } as any)
+      .instruction();
+
+    const tx = new Transaction().add(ed25519Ix, submitIx);
+    await expectAnchorError(
+      provider.sendAndConfirm(tx, [outsider]),
+      "ConstraintHasOne"
     );
   });
 
@@ -167,10 +189,24 @@ describe("clawfarm-attestation", () => {
     assert.equal(finalized.status, 2);
     assert.isAbove(finalized.finalizedAt.toNumber(), 0);
 
+    await expectAnchorError(
+      program.methods
+        .closeReceipt()
+        .accounts({
+          authority: outsider.publicKey,
+          config: configPda,
+          receipt: receiptPda,
+        } as any)
+        .signers([outsider])
+        .rpc(),
+      "ConstraintHasOne"
+    );
+
     await program.methods
       .closeReceipt()
       .accounts({
-        recipient: wallet.publicKey,
+        authority: wallet.publicKey,
+        config: configPda,
         receipt: receiptPda,
       } as any)
       .rpc();
@@ -241,10 +277,24 @@ describe("clawfarm-attestation", () => {
     assert.equal(challenge.status, 2);
     assert.equal(challenge.resolutionCode, resolutionRejected);
 
+    await expectAnchorError(
+      program.methods
+        .closeChallenge()
+        .accounts({
+          authority: outsider.publicKey,
+          config: configPda,
+          challenge: challengePda,
+        } as any)
+        .signers([outsider])
+        .rpc(),
+      "ConstraintHasOne"
+    );
+
     await program.methods
       .closeChallenge()
       .accounts({
-        recipient: wallet.publicKey,
+        authority: wallet.publicKey,
+        config: configPda,
         challenge: challengePda,
       } as any)
       .rpc();
@@ -252,7 +302,8 @@ describe("clawfarm-attestation", () => {
     await program.methods
       .closeReceipt()
       .accounts({
-        recipient: wallet.publicKey,
+        authority: wallet.publicKey,
+        config: configPda,
         receipt: receiptPda,
       } as any)
       .rpc();
@@ -340,7 +391,7 @@ describe("clawfarm-attestation", () => {
     const submitIx = await program.methods
       .submitReceipt(submit)
       .accounts({
-        payer: wallet.publicKey,
+        authority: wallet.publicKey,
         config: configPda,
         providerSigner: providerSignerPda,
         receipt: receiptPda,
