@@ -40,16 +40,10 @@ pub enum ErrorCode {
     SignerAttesterTypeMismatch,
     #[msg("The challenge window is closed")]
     ChallengeWindowClosed,
-    #[msg("The response window is closed")]
-    ResponseWindowClosed,
     #[msg("Receipt is not challengeable")]
     ReceiptNotChallengeable,
     #[msg("Receipt nonce does not match the receipt account")]
     ReceiptNonceMismatch,
-    #[msg("Challenge is not open")]
-    ChallengeNotOpen,
-    #[msg("Responder is not authorized for this challenge")]
-    ChallengeResponderUnauthorized,
     #[msg("Challenge cannot be resolved in its current state")]
     ChallengeNotResolvable,
     #[msg("Challenge resolution is invalid")]

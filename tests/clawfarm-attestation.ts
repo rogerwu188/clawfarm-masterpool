@@ -61,7 +61,6 @@ describe("clawfarm-attestation", () => {
         authority,
         pauseAuthority,
         challengeResolver,
-        new BN(1),
         new BN(1)
       )
       .accounts({
@@ -196,7 +195,6 @@ describe("clawfarm-attestation", () => {
       challenger.publicKey
     );
     const evidenceHash = Array.from(fillBytes(32, 7));
-    const responseHash = Array.from(fillBytes(32, 9));
 
     await sendSubmitReceipt(submit);
 
@@ -220,27 +218,22 @@ describe("clawfarm-attestation", () => {
 
     await expectAnchorError(
       program.methods
-        .respondChallenge(requestNonce, challengeType, challenger.publicKey, responseHash)
+        .resolveChallenge(
+          requestNonce,
+          challengeType,
+          challenger.publicKey,
+          resolutionRejected
+        )
         .accounts({
-          responder: outsider.publicKey,
+          challengeResolver: outsider.publicKey,
           config: configPda,
           receipt: receiptPda,
           challenge: challengePda,
         } as any)
         .signers([outsider])
         .rpc(),
-      "ChallengeResponderUnauthorized"
+      "ConstraintHasOne"
     );
-
-    await program.methods
-      .respondChallenge(requestNonce, challengeType, challenger.publicKey, responseHash)
-      .accounts({
-        responder: authority,
-        config: configPda,
-        receipt: receiptPda,
-        challenge: challengePda,
-      } as any)
-      .rpc();
 
     await program.methods
       .resolveChallenge(
@@ -263,7 +256,7 @@ describe("clawfarm-attestation", () => {
 
     assert.equal(receipt.status, 2);
     assert.isAbove(receipt.finalizedAt.toNumber(), 0);
-    assert.equal(challenge.status, 3);
+    assert.equal(challenge.status, 2);
     assert.equal(challenge.resolutionCode, resolutionRejected);
     assert.equal(config.challengeCount.toNumber(), 1);
 

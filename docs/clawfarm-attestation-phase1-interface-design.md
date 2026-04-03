@@ -112,7 +112,6 @@ Fields:
 - `pause_authority: Pubkey`
 - `challenge_resolver: Pubkey`
 - `challenge_window_seconds: i64`
-- `response_window_seconds: i64`
 - `receipt_count: u64`
 - `challenge_count: u64`
 - `is_paused: bool`
@@ -194,9 +193,7 @@ Fields:
 - `challenger: Pubkey`
 - `challenge_type: u8`
 - `evidence_hash: [u8; 32]`
-- `response_hash: [u8; 32]`
 - `opened_at: i64`
-- `response_deadline: i64`
 - `resolved_at: i64`
 - `status: u8`
 - `resolution_code: u8`
@@ -251,10 +248,9 @@ Phase 1 accepts only `0`.
 ### `ChallengeStatus`
 
 - `0 = Open`
-- `1 = Responded`
-- `2 = Accepted`
-- `3 = Rejected`
-- `4 = Expired`
+- `1 = Accepted`
+- `2 = Rejected`
+- `3 = Expired`
 
 Note:
 
@@ -294,14 +290,12 @@ pub fn initialize_config(
     pause_authority: Pubkey,
     challenge_resolver: Pubkey,
     challenge_window_seconds: i64,
-    response_window_seconds: i64,
 ) -> Result<()>
 ```
 
 Checks:
 
 - `challenge_window_seconds > 0`
-- `response_window_seconds > 0`
 
 Effects:
 
@@ -479,38 +473,7 @@ Effects:
 - sets `receipt.status = Challenged`
 - increments `config.challenge_count`
 
-## 7. `respond_challenge`
-
-Purpose:
-
-- attach resolver-side response evidence to an open challenge
-
-Signature:
-
-```rust
-pub fn respond_challenge(
-    ctx: Context<RespondChallenge>,
-    request_nonce: String,
-    challenge_type: u8,
-    challenger: Pubkey,
-    response_hash: [u8; 32],
-) -> Result<()>
-```
-
-Checks:
-
-- `request_nonce` format is valid
-- `challenge_type` is valid
-- caller is `config.authority` or `config.challenge_resolver`
-- targeted challenge is still `Open`
-- current time is not past `response_deadline`
-
-Effects:
-
-- sets `response_hash`
-- sets `challenge.status = Responded`
-
-## 8. `resolve_challenge`
+## 7. `resolve_challenge`
 
 Purpose:
 
@@ -534,7 +497,7 @@ Checks:
 - `request_nonce` format is valid
 - `challenge_type` is valid
 - `resolution_code` is valid and not `None`
-- challenge is `Open` or `Responded`
+- challenge is `Open`
 
 Effects:
 
@@ -551,7 +514,7 @@ Effects:
   - `receipt.status = Finalized`
   - `receipt.finalized_at = now`
 
-## 9. `finalize_receipt`
+## 8. `finalize_receipt`
 
 Purpose:
 
@@ -577,7 +540,7 @@ Effects:
 - sets `receipt.status = Finalized`
 - sets `receipt.finalized_at = now`
 
-## 10. `close_challenge`
+## 9. `close_challenge`
 
 Purpose:
 
@@ -605,7 +568,7 @@ Effects:
 - closes `Challenge`
 - transfers lamports to `recipient`
 
-## 11. `close_receipt`
+## 10. `close_receipt`
 
 Purpose:
 
@@ -655,11 +618,6 @@ Challenge lifecycle:
 
 ```text
 Open
-  -> Responded
-  -> Accepted
-  -> Rejected
-
-Responded
   -> Accepted
   -> Rejected
 ```
@@ -722,10 +680,10 @@ Current allocation uses `8 + <Account>::INIT_SPACE`.
 
 Effective sizes in the current implementation:
 
-- `Config = 171 bytes`
+- `Config = 163 bytes`
 - `ProviderSigner = 339 bytes`
 - `Receipt = 98 bytes`
-- `Challenge = 164 bytes`
+- `Challenge = 124 bytes`
 
 This is the main rent reduction relative to the previous design that stored the
 full receipt body on-chain.
@@ -742,6 +700,5 @@ Current events:
 - `ReceiptFinalized`
 - `ReceiptClosed`
 - `ChallengeOpened`
-- `ChallengeResponded`
 - `ChallengeResolved`
 - `ChallengeClosed`

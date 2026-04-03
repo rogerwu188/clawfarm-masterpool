@@ -22,7 +22,7 @@ use instructions::admin::{
 };
 use instructions::challenge::{
     __client_accounts_close_challenge, __client_accounts_open_challenge,
-    __client_accounts_resolve_challenge, __client_accounts_respond_challenge,
+    __client_accounts_resolve_challenge,
 };
 use instructions::receipt::{
     __client_accounts_close_receipt, __client_accounts_finalize_receipt,
@@ -30,8 +30,7 @@ use instructions::receipt::{
 };
 pub use instructions::{
     CloseChallenge, CloseReceipt, FinalizeReceipt, InitializeConfig, OpenChallenge,
-    ResolveChallenge, RespondChallenge, RevokeProviderSigner, SetPause, SubmitReceipt,
-    UpsertProviderSigner,
+    ResolveChallenge, RevokeProviderSigner, SetPause, SubmitReceipt, UpsertProviderSigner,
 };
 pub use state::*;
 
@@ -47,7 +46,6 @@ pub mod clawfarm_attestation {
         pause_authority: Pubkey,
         challenge_resolver: Pubkey,
         challenge_window_seconds: i64,
-        response_window_seconds: i64,
     ) -> Result<()> {
         instructions::admin::initialize_config(
             ctx,
@@ -55,7 +53,6 @@ pub mod clawfarm_attestation {
             pause_authority,
             challenge_resolver,
             challenge_window_seconds,
-            response_window_seconds,
         )
     }
 
@@ -104,22 +101,6 @@ pub mod clawfarm_attestation {
         evidence_hash: [u8; 32],
     ) -> Result<()> {
         instructions::challenge::open_challenge(ctx, request_nonce, challenge_type, evidence_hash)
-    }
-
-    pub fn respond_challenge(
-        ctx: Context<RespondChallenge>,
-        request_nonce: String,
-        challenge_type: u8,
-        challenger: Pubkey,
-        response_hash: [u8; 32],
-    ) -> Result<()> {
-        instructions::challenge::respond_challenge(
-            ctx,
-            request_nonce,
-            challenge_type,
-            challenger,
-            response_hash,
-        )
     }
 
     pub fn resolve_challenge(

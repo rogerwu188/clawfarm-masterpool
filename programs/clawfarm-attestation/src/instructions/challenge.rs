@@ -3,7 +3,7 @@ use anchor_lang::prelude::*;
 use crate::{
     constants::{CHALLENGE_SEED, CONFIG_SEED, RECEIPT_SEED},
     error::ErrorCode,
-    events::{ChallengeClosed, ChallengeOpened, ChallengeResolved, ChallengeResponded},
+    events::{ChallengeClosed, ChallengeOpened, ChallengeResolved},
     state::{
         Challenge, ChallengeStatus, ChallengeType, Config, Receipt, ReceiptStatus, ResolutionCode,
     },
@@ -35,9 +35,7 @@ pub fn open_challenge(
     challenge.challenger = ctx.accounts.challenger.key();
     challenge.challenge_type = challenge_type as u8;
     challenge.evidence_hash = evidence_hash;
-    challenge.response_hash = [0; 32];
     challenge.opened_at = now;
-    challenge.response_deadline = now + ctx.accounts.config.response_window_seconds;
     challenge.resolved_at = 0;
     challenge.status = ChallengeStatus::Open as u8;
     challenge.resolution_code = ResolutionCode::None as u8;
@@ -49,51 +47,6 @@ pub fn open_challenge(
     emit!(ChallengeOpened {
         request_nonce,
         challenger: ctx.accounts.challenger.key(),
-        challenge_type: challenge_type as u8,
-    });
-    Ok(())
-}
-
-pub fn respond_challenge(
-    ctx: Context<RespondChallenge>,
-    request_nonce: String,
-    challenge_type: u8,
-    challenger: Pubkey,
-    response_hash: [u8; 32],
-) -> Result<()> {
-    validate_request_nonce(&request_nonce)?;
-    let challenge_type = ChallengeType::try_from(challenge_type)?;
-    let now = Clock::get()?.unix_timestamp;
-    require!(
-        ctx.accounts.responder.key() == ctx.accounts.config.authority
-            || ctx.accounts.responder.key() == ctx.accounts.config.challenge_resolver,
-        ErrorCode::ChallengeResponderUnauthorized
-    );
-
-    let challenge = &mut ctx.accounts.challenge;
-    require!(
-        challenge.challenger == challenger,
-        ErrorCode::ChallengeChallengerMismatch
-    );
-    require!(
-        challenge.challenge_type == challenge_type as u8,
-        ErrorCode::ChallengeTypeMismatch
-    );
-    require!(
-        challenge.status == ChallengeStatus::Open as u8,
-        ErrorCode::ChallengeNotOpen
-    );
-    require!(
-        now <= challenge.response_deadline,
-        ErrorCode::ResponseWindowClosed
-    );
-
-    challenge.response_hash = response_hash;
-    challenge.status = ChallengeStatus::Responded as u8;
-
-    emit!(ChallengeResponded {
-        request_nonce,
-        challenger,
         challenge_type: challenge_type as u8,
     });
     Ok(())
@@ -124,8 +77,7 @@ pub fn resolve_challenge(
         ErrorCode::ChallengeTypeMismatch
     );
     require!(
-        challenge.status == ChallengeStatus::Open as u8
-            || challenge.status == ChallengeStatus::Responded as u8,
+        challenge.status == ChallengeStatus::Open as u8,
         ErrorCode::ChallengeNotResolvable
     );
 
@@ -219,38 +171,6 @@ pub struct OpenChallenge<'info> {
     )]
     pub challenge: Account<'info, Challenge>,
     pub system_program: Program<'info, System>,
-}
-
-#[derive(Accounts)]
-#[instruction(
-    request_nonce: String,
-    challenge_type: u8,
-    challenger: Pubkey,
-    response_hash: [u8; 32]
-)]
-pub struct RespondChallenge<'info> {
-    pub responder: Signer<'info>,
-    #[account(
-        seeds = [CONFIG_SEED],
-        bump = config.bump
-    )]
-    pub config: Account<'info, Config>,
-    #[account(
-        seeds = [RECEIPT_SEED, &request_nonce_seed(request_nonce.as_str())],
-        bump = receipt.bump
-    )]
-    pub receipt: Account<'info, Receipt>,
-    #[account(
-        mut,
-        seeds = [
-            CHALLENGE_SEED,
-            receipt.key().as_ref(),
-            &[challenge_type],
-            challenger.as_ref()
-        ],
-        bump = challenge.bump
-    )]
-    pub challenge: Account<'info, Challenge>,
 }
 
 #[derive(Accounts)]

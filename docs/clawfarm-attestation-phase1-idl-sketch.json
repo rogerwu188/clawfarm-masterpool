@@ -3,8 +3,12 @@
   "version": "0.1.0-implemented",
   "phase": "phase1",
   "accepted_values": {
-    "proof_mode": ["sig_log"],
-    "usage_basis": ["provider_reported"],
+    "proof_mode": [
+      "sig_log"
+    ],
+    "usage_basis": [
+      "provider_reported"
+    ],
     "signature_scheme": "ed25519"
   },
   "constants": {
@@ -15,10 +19,10 @@
     "MAX_KEY_ID_LEN": 128,
     "MAX_PROVIDER_REQUEST_ID_LEN": 255,
     "MAX_PROOF_URL_LEN": 512,
-    "CONFIG_ALLOCATED": 171,
+    "CONFIG_ALLOCATED": 163,
     "PROVIDER_SIGNER_ALLOCATED": 339,
     "RECEIPT_ALLOCATED": 98,
-    "CHALLENGE_ALLOCATED": 164
+    "CHALLENGE_ALLOCATED": 124
   },
   "seeds": {
     "CONFIG_SEED": "config",
@@ -56,10 +60,9 @@
     },
     "ChallengeStatus": {
       "open": 0,
-      "responded": 1,
-      "accepted": 2,
-      "rejected": 3,
-      "expired": 4
+      "accepted": 1,
+      "rejected": 2,
+      "expired": 3
     },
     "ChallengeType": {
       "invalid_signature": 0,
@@ -78,68 +81,225 @@
   },
   "accounts": {
     "Config": {
-      "allocated": 171,
-      "seeds": ["config"],
+      "allocated": 163,
+      "seeds": [
+        "config"
+      ],
       "fields": [
-        {"name": "authority", "type": "pubkey"},
-        {"name": "pause_authority", "type": "pubkey"},
-        {"name": "challenge_resolver", "type": "pubkey"},
-        {"name": "challenge_window_seconds", "type": "i64"},
-        {"name": "response_window_seconds", "type": "i64"},
-        {"name": "receipt_count", "type": "u64"},
-        {"name": "challenge_count", "type": "u64"},
-        {"name": "is_paused", "type": "bool"},
-        {"name": "phase2_enabled", "type": "bool"},
-        {"name": "bump", "type": "u8"},
-        {"name": "reserved", "type": {"array": ["u8", 32]}}
+        {
+          "name": "authority",
+          "type": "pubkey"
+        },
+        {
+          "name": "pause_authority",
+          "type": "pubkey"
+        },
+        {
+          "name": "challenge_resolver",
+          "type": "pubkey"
+        },
+        {
+          "name": "challenge_window_seconds",
+          "type": "i64"
+        },
+        {
+          "name": "receipt_count",
+          "type": "u64"
+        },
+        {
+          "name": "challenge_count",
+          "type": "u64"
+        },
+        {
+          "name": "is_paused",
+          "type": "bool"
+        },
+        {
+          "name": "phase2_enabled",
+          "type": "bool"
+        },
+        {
+          "name": "bump",
+          "type": "u8"
+        },
+        {
+          "name": "reserved",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
       ]
     },
     "ProviderSigner": {
       "allocated": 339,
-      "seeds": ["provider_signer", "provider_code_hash", "signer_pubkey"],
+      "seeds": [
+        "provider_signer",
+        "provider_code_hash",
+        "signer_pubkey"
+      ],
       "fields": [
-        {"name": "provider_code", "type": "string", "max_len": 64},
-        {"name": "signer", "type": "pubkey"},
-        {"name": "key_id", "type": "string", "max_len": 128},
-        {"name": "attester_type_mask", "type": "u8"},
-        {"name": "status", "type": "u8", "enum": "SignerStatus"},
-        {"name": "valid_from", "type": "i64"},
-        {"name": "valid_until", "type": "i64"},
-        {"name": "metadata_hash", "type": {"array": ["u8", 32]}},
-        {"name": "created_at", "type": "i64"},
-        {"name": "updated_at", "type": "i64"},
-        {"name": "bump", "type": "u8"},
-        {"name": "reserved", "type": {"array": ["u8", 32]}}
+        {
+          "name": "provider_code",
+          "type": "string",
+          "max_len": 64
+        },
+        {
+          "name": "signer",
+          "type": "pubkey"
+        },
+        {
+          "name": "key_id",
+          "type": "string",
+          "max_len": 128
+        },
+        {
+          "name": "attester_type_mask",
+          "type": "u8"
+        },
+        {
+          "name": "status",
+          "type": "u8",
+          "enum": "SignerStatus"
+        },
+        {
+          "name": "valid_from",
+          "type": "i64"
+        },
+        {
+          "name": "valid_until",
+          "type": "i64"
+        },
+        {
+          "name": "metadata_hash",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "created_at",
+          "type": "i64"
+        },
+        {
+          "name": "updated_at",
+          "type": "i64"
+        },
+        {
+          "name": "bump",
+          "type": "u8"
+        },
+        {
+          "name": "reserved",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
       ]
     },
     "Receipt": {
       "allocated": 98,
-      "seeds": ["receipt", "request_nonce_hash"],
+      "seeds": [
+        "receipt",
+        "request_nonce_hash"
+      ],
       "fields": [
-        {"name": "receipt_hash", "type": {"array": ["u8", 32]}},
-        {"name": "signer", "type": "pubkey"},
-        {"name": "submitted_at", "type": "i64"},
-        {"name": "challenge_deadline", "type": "i64"},
-        {"name": "finalized_at", "type": "i64"},
-        {"name": "status", "type": "u8", "enum": "ReceiptStatus"},
-        {"name": "bump", "type": "u8"}
+        {
+          "name": "receipt_hash",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "signer",
+          "type": "pubkey"
+        },
+        {
+          "name": "submitted_at",
+          "type": "i64"
+        },
+        {
+          "name": "challenge_deadline",
+          "type": "i64"
+        },
+        {
+          "name": "finalized_at",
+          "type": "i64"
+        },
+        {
+          "name": "status",
+          "type": "u8",
+          "enum": "ReceiptStatus"
+        },
+        {
+          "name": "bump",
+          "type": "u8"
+        }
       ]
     },
     "Challenge": {
-      "allocated": 164,
-      "seeds": ["challenge", "receipt_pubkey", "challenge_type", "challenger_pubkey"],
+      "allocated": 124,
+      "seeds": [
+        "challenge",
+        "receipt_pubkey",
+        "challenge_type",
+        "challenger_pubkey"
+      ],
       "fields": [
-        {"name": "receipt", "type": "pubkey"},
-        {"name": "challenger", "type": "pubkey"},
-        {"name": "challenge_type", "type": "u8", "enum": "ChallengeType"},
-        {"name": "evidence_hash", "type": {"array": ["u8", 32]}},
-        {"name": "response_hash", "type": {"array": ["u8", 32]}},
-        {"name": "opened_at", "type": "i64"},
-        {"name": "response_deadline", "type": "i64"},
-        {"name": "resolved_at", "type": "i64"},
-        {"name": "status", "type": "u8", "enum": "ChallengeStatus"},
-        {"name": "resolution_code", "type": "u8", "enum": "ResolutionCode"},
-        {"name": "bump", "type": "u8"}
+        {
+          "name": "receipt",
+          "type": "pubkey"
+        },
+        {
+          "name": "challenger",
+          "type": "pubkey"
+        },
+        {
+          "name": "challenge_type",
+          "type": "u8",
+          "enum": "ChallengeType"
+        },
+        {
+          "name": "evidence_hash",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "opened_at",
+          "type": "i64"
+        },
+        {
+          "name": "resolved_at",
+          "type": "i64"
+        },
+        {
+          "name": "status",
+          "type": "u8",
+          "enum": "ChallengeStatus"
+        },
+        {
+          "name": "resolution_code",
+          "type": "u8",
+          "enum": "ResolutionCode"
+        },
+        {
+          "name": "bump",
+          "type": "u8"
+        }
       ]
     }
   },
@@ -147,191 +307,489 @@
     {
       "name": "initialize_config",
       "accounts": [
-        {"name": "payer", "writable": true, "signer": true},
-        {"name": "config", "writable": true},
-        {"name": "system_program"}
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config",
+          "writable": true
+        },
+        {
+          "name": "system_program"
+        }
       ],
       "args": [
-        {"name": "authority", "type": "pubkey"},
-        {"name": "pause_authority", "type": "pubkey"},
-        {"name": "challenge_resolver", "type": "pubkey"},
-        {"name": "challenge_window_seconds", "type": "i64"},
-        {"name": "response_window_seconds", "type": "i64"}
+        {
+          "name": "authority",
+          "type": "pubkey"
+        },
+        {
+          "name": "pause_authority",
+          "type": "pubkey"
+        },
+        {
+          "name": "challenge_resolver",
+          "type": "pubkey"
+        },
+        {
+          "name": "challenge_window_seconds",
+          "type": "i64"
+        }
       ]
     },
     {
       "name": "upsert_provider_signer",
       "accounts": [
-        {"name": "authority", "signer": true, "writable": true},
-        {"name": "config"},
-        {"name": "provider_signer", "writable": true},
-        {"name": "system_program"}
+        {
+          "name": "authority",
+          "signer": true,
+          "writable": true
+        },
+        {
+          "name": "config"
+        },
+        {
+          "name": "provider_signer",
+          "writable": true
+        },
+        {
+          "name": "system_program"
+        }
       ],
       "args": [
-        {"name": "provider_code", "type": "string", "max_len": 64},
-        {"name": "signer", "type": "pubkey"},
-        {"name": "key_id", "type": "string", "max_len": 128},
-        {"name": "attester_type_mask", "type": "u8"},
-        {"name": "valid_from", "type": "i64"},
-        {"name": "valid_until", "type": "i64"},
-        {"name": "metadata_hash", "type": {"array": ["u8", 32]}}
+        {
+          "name": "provider_code",
+          "type": "string",
+          "max_len": 64
+        },
+        {
+          "name": "signer",
+          "type": "pubkey"
+        },
+        {
+          "name": "key_id",
+          "type": "string",
+          "max_len": 128
+        },
+        {
+          "name": "attester_type_mask",
+          "type": "u8"
+        },
+        {
+          "name": "valid_from",
+          "type": "i64"
+        },
+        {
+          "name": "valid_until",
+          "type": "i64"
+        },
+        {
+          "name": "metadata_hash",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
       ]
     },
     {
       "name": "set_pause",
       "accounts": [
-        {"name": "pause_authority", "signer": true},
-        {"name": "config", "writable": true}
+        {
+          "name": "pause_authority",
+          "signer": true
+        },
+        {
+          "name": "config",
+          "writable": true
+        }
       ],
       "args": [
-        {"name": "is_paused", "type": "bool"}
+        {
+          "name": "is_paused",
+          "type": "bool"
+        }
       ]
     },
     {
       "name": "revoke_provider_signer",
       "accounts": [
-        {"name": "authority", "signer": true},
-        {"name": "config"},
-        {"name": "provider_signer", "writable": true}
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "config"
+        },
+        {
+          "name": "provider_signer",
+          "writable": true
+        }
       ],
       "args": [
-        {"name": "provider_code", "type": "string", "max_len": 64},
-        {"name": "signer", "type": "pubkey"}
+        {
+          "name": "provider_code",
+          "type": "string",
+          "max_len": 64
+        },
+        {
+          "name": "signer",
+          "type": "pubkey"
+        }
       ]
     },
     {
       "name": "submit_receipt",
       "accounts": [
-        {"name": "payer", "writable": true, "signer": true},
-        {"name": "config", "writable": true},
-        {"name": "provider_signer"},
-        {"name": "receipt", "writable": true},
-        {"name": "instructions_sysvar"},
-        {"name": "system_program"}
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config",
+          "writable": true
+        },
+        {
+          "name": "provider_signer"
+        },
+        {
+          "name": "receipt",
+          "writable": true
+        },
+        {
+          "name": "instructions_sysvar"
+        },
+        {
+          "name": "system_program"
+        }
       ],
       "args": [
-        {"name": "args", "type": "SubmitReceiptArgs"}
+        {
+          "name": "args",
+          "type": "SubmitReceiptArgs"
+        }
       ]
     },
     {
       "name": "open_challenge",
       "accounts": [
-        {"name": "challenger", "writable": true, "signer": true},
-        {"name": "config", "writable": true},
-        {"name": "receipt", "writable": true},
-        {"name": "challenge", "writable": true},
-        {"name": "system_program"}
+        {
+          "name": "challenger",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config",
+          "writable": true
+        },
+        {
+          "name": "receipt",
+          "writable": true
+        },
+        {
+          "name": "challenge",
+          "writable": true
+        },
+        {
+          "name": "system_program"
+        }
       ],
       "args": [
-        {"name": "request_nonce", "type": "string", "max_len": 128},
-        {"name": "challenge_type", "type": "u8"},
-        {"name": "evidence_hash", "type": {"array": ["u8", 32]}}
-      ]
-    },
-    {
-      "name": "respond_challenge",
-      "accounts": [
-        {"name": "responder", "signer": true},
-        {"name": "config"},
-        {"name": "receipt"},
-        {"name": "challenge", "writable": true}
-      ],
-      "args": [
-        {"name": "request_nonce", "type": "string", "max_len": 128},
-        {"name": "challenge_type", "type": "u8"},
-        {"name": "challenger", "type": "pubkey"},
-        {"name": "response_hash", "type": {"array": ["u8", 32]}}
+        {
+          "name": "request_nonce",
+          "type": "string",
+          "max_len": 128
+        },
+        {
+          "name": "challenge_type",
+          "type": "u8"
+        },
+        {
+          "name": "evidence_hash",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
       ]
     },
     {
       "name": "resolve_challenge",
       "accounts": [
-        {"name": "challenge_resolver", "signer": true},
-        {"name": "config"},
-        {"name": "receipt", "writable": true},
-        {"name": "challenge", "writable": true}
+        {
+          "name": "challenge_resolver",
+          "signer": true
+        },
+        {
+          "name": "config"
+        },
+        {
+          "name": "receipt",
+          "writable": true
+        },
+        {
+          "name": "challenge",
+          "writable": true
+        }
       ],
       "args": [
-        {"name": "request_nonce", "type": "string", "max_len": 128},
-        {"name": "challenge_type", "type": "u8"},
-        {"name": "challenger", "type": "pubkey"},
-        {"name": "resolution_code", "type": "u8"}
+        {
+          "name": "request_nonce",
+          "type": "string",
+          "max_len": 128
+        },
+        {
+          "name": "challenge_type",
+          "type": "u8"
+        },
+        {
+          "name": "challenger",
+          "type": "pubkey"
+        },
+        {
+          "name": "resolution_code",
+          "type": "u8"
+        }
       ]
     },
     {
       "name": "finalize_receipt",
       "accounts": [
-        {"name": "caller", "signer": true},
-        {"name": "config"},
-        {"name": "receipt", "writable": true}
+        {
+          "name": "caller",
+          "signer": true
+        },
+        {
+          "name": "config"
+        },
+        {
+          "name": "receipt",
+          "writable": true
+        }
       ],
       "args": [
-        {"name": "request_nonce", "type": "string", "max_len": 128}
+        {
+          "name": "request_nonce",
+          "type": "string",
+          "max_len": 128
+        }
       ]
     },
     {
       "name": "close_challenge",
       "accounts": [
-        {"name": "recipient", "writable": true, "signer": true},
-        {"name": "receipt", "writable": true},
-        {"name": "challenge", "writable": true}
+        {
+          "name": "recipient",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "receipt",
+          "writable": true
+        },
+        {
+          "name": "challenge",
+          "writable": true
+        }
       ],
       "args": [
-        {"name": "request_nonce", "type": "string", "max_len": 128},
-        {"name": "challenge_type", "type": "u8"},
-        {"name": "challenger", "type": "pubkey"}
+        {
+          "name": "request_nonce",
+          "type": "string",
+          "max_len": 128
+        },
+        {
+          "name": "challenge_type",
+          "type": "u8"
+        },
+        {
+          "name": "challenger",
+          "type": "pubkey"
+        }
       ]
     },
     {
       "name": "close_receipt",
       "accounts": [
-        {"name": "recipient", "writable": true, "signer": true},
-        {"name": "receipt", "writable": true}
+        {
+          "name": "recipient",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "receipt",
+          "writable": true
+        }
       ],
       "args": [
-        {"name": "request_nonce", "type": "string", "max_len": 128}
+        {
+          "name": "request_nonce",
+          "type": "string",
+          "max_len": 128
+        }
       ]
     }
   ],
   "types": {
     "SubmitReceiptArgs": {
       "fields": [
-        {"name": "version", "type": "u8"},
-        {"name": "proof_mode", "type": "u8", "enum": "ProofMode"},
-        {"name": "proof_id", "type": "string", "max_len": 128},
-        {"name": "request_nonce", "type": "string", "max_len": 128},
-        {"name": "provider", "type": "string", "max_len": 64},
-        {"name": "attester_type", "type": "u8", "enum": "AttesterType"},
-        {"name": "model", "type": "string", "max_len": 255},
-        {"name": "usage_basis", "type": "u8", "enum": "UsageBasis"},
-        {"name": "prompt_tokens", "type": "u64"},
-        {"name": "completion_tokens", "type": "u64"},
-        {"name": "total_tokens", "type": "u64"},
-        {"name": "charge_atomic", "type": "u64"},
-        {"name": "charge_mint", "type": "pubkey"},
-        {"name": "provider_request_id", "type": {"option": "string"}, "max_len": 255},
-        {"name": "issued_at", "type": {"option": "i64"}},
-        {"name": "expires_at", "type": {"option": "i64"}},
-        {"name": "http_status", "type": {"option": "u16"}},
-        {"name": "latency_ms", "type": {"option": "u64"}},
-        {"name": "proof_url", "type": "string", "max_len": 512},
-        {"name": "receipt_hash", "type": {"array": ["u8", 32]}},
-        {"name": "signer", "type": "pubkey"},
-        {"name": "signature", "type": {"array": ["u8", 64]}}
+        {
+          "name": "version",
+          "type": "u8"
+        },
+        {
+          "name": "proof_mode",
+          "type": "u8",
+          "enum": "ProofMode"
+        },
+        {
+          "name": "proof_id",
+          "type": "string",
+          "max_len": 128
+        },
+        {
+          "name": "request_nonce",
+          "type": "string",
+          "max_len": 128
+        },
+        {
+          "name": "provider",
+          "type": "string",
+          "max_len": 64
+        },
+        {
+          "name": "attester_type",
+          "type": "u8",
+          "enum": "AttesterType"
+        },
+        {
+          "name": "model",
+          "type": "string",
+          "max_len": 255
+        },
+        {
+          "name": "usage_basis",
+          "type": "u8",
+          "enum": "UsageBasis"
+        },
+        {
+          "name": "prompt_tokens",
+          "type": "u64"
+        },
+        {
+          "name": "completion_tokens",
+          "type": "u64"
+        },
+        {
+          "name": "total_tokens",
+          "type": "u64"
+        },
+        {
+          "name": "charge_atomic",
+          "type": "u64"
+        },
+        {
+          "name": "charge_mint",
+          "type": "pubkey"
+        },
+        {
+          "name": "provider_request_id",
+          "type": {
+            "option": "string"
+          },
+          "max_len": 255
+        },
+        {
+          "name": "issued_at",
+          "type": {
+            "option": "i64"
+          }
+        },
+        {
+          "name": "expires_at",
+          "type": {
+            "option": "i64"
+          }
+        },
+        {
+          "name": "http_status",
+          "type": {
+            "option": "u16"
+          }
+        },
+        {
+          "name": "latency_ms",
+          "type": {
+            "option": "u64"
+          }
+        },
+        {
+          "name": "proof_url",
+          "type": "string",
+          "max_len": 512
+        },
+        {
+          "name": "receipt_hash",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "signer",
+          "type": "pubkey"
+        },
+        {
+          "name": "signature",
+          "type": {
+            "array": [
+              "u8",
+              64
+            ]
+          }
+        }
       ]
     }
   },
   "events": [
-    {"name": "ConfigInitialized"},
-    {"name": "ProviderSignerUpserted"},
-    {"name": "ProviderSignerRevoked"},
-    {"name": "PauseUpdated"},
-    {"name": "ReceiptSubmitted"},
-    {"name": "ReceiptFinalized"},
-    {"name": "ReceiptClosed"},
-    {"name": "ChallengeOpened"},
-    {"name": "ChallengeResponded"},
-    {"name": "ChallengeResolved"},
-    {"name": "ChallengeClosed"}
+    {
+      "name": "ConfigInitialized"
+    },
+    {
+      "name": "ProviderSignerUpserted"
+    },
+    {
+      "name": "ProviderSignerRevoked"
+    },
+    {
+      "name": "PauseUpdated"
+    },
+    {
+      "name": "ReceiptSubmitted"
+    },
+    {
+      "name": "ReceiptFinalized"
+    },
+    {
+      "name": "ReceiptClosed"
+    },
+    {
+      "name": "ChallengeOpened"
+    },
+    {
+      "name": "ChallengeResolved"
+    },
+    {
+      "name": "ChallengeClosed"
+    }
   ]
 }

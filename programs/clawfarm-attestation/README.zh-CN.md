@@ -51,7 +51,6 @@ PDA Seed：
 - `pause_authority`
 - `challenge_resolver`
 - `challenge_window_seconds`
-- `response_window_seconds`
 - `receipt_count`
 - `challenge_count`
 - `is_paused`
@@ -122,9 +121,7 @@ PDA Seed：
 - `challenger`
 - `challenge_type`
 - `evidence_hash`
-- `response_hash`
 - `opened_at`
-- `response_deadline`
 - `resolved_at`
 - `status`
 - `resolution_code`
@@ -177,10 +174,9 @@ Phase 1 只接受 `ProviderReported`。
 ### `ChallengeStatus`
 
 - `0 = Open`
-- `1 = Responded`
-- `2 = Accepted`
-- `3 = Rejected`
-- `4 = Expired`
+- `1 = Accepted`
+- `2 = Rejected`
+- `3 = Expired`
 
 说明：
 
@@ -282,6 +278,29 @@ Canonicalization 逻辑见 [utils.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-m
 - 官网应查询 Clawfarm 的索引层，而不是只靠 S3 列表推导状态
 - close 流程只能在链上确认终态后执行
 
+## Resolver 机器人流程
+
+这里的 `challenge_resolver` 更适合设计成 Clawfarm 的自动化机器人，而不是人工手动操作的钱包。
+
+推荐工作循环：
+
+1. 监听新的 `ChallengeOpened` 事件，或定时扫描状态仍为 `Open` 的 challenge PDA
+2. 通过 Clawfarm 索引读取关联 receipt，并从链下存储拉取完整 canonical receipt 与 challenge 证据
+3. 在链下重建 dispute package，并按 `challenge_type` 执行 Clawfarm 自己的校验逻辑
+4. 根据校验结果归约成单个 `resolution_code`：
+   - challenge 不成立时用 `Rejected`
+   - receipt 无效时用 `Accepted` 或 `ReceiptInvalidated`
+   - signer 需要连带惩罚和撤销时用 `SignerRevoked`
+5. 由机器人控制的 `challenge_resolver` 权限地址发起 `resolve_challenge`
+6. receipt 和 challenge 进入终态后，再执行 `close_challenge` 与 `close_receipt` 回收 rent
+
+运维建议：
+
+- 机器人在链上尽量保持无状态，持久事实来源应仍然是 Clawfarm 索引和链上的 receipt/challenge PDA
+- 链下校验逻辑要尽量确定性、可重放，保证后续审计时能解释某个 `resolution_code` 为什么成立
+- 调度要做成幂等；如果 RPC 提交失败或取证过程中断，机器人应能安全重试
+- 机器人日志里最好记录证据对象的版本号或内容哈希，方便追溯当时裁决使用的具体材料
+
 ## Rent 估算
 
 当前实现通过最小化 `ReceiptLite` 并在终态后及时 close，来降低长期成本。
@@ -289,7 +308,7 @@ Canonicalization 逻辑见 [utils.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-m
 ### 当前账户大小
 
 - `Receipt` 分配大小：`98 bytes`
-- `Challenge` 分配大小：`164 bytes`
+- `Challenge` 分配大小：`124 bytes`
 
 ### Rent 公式
 
@@ -304,7 +323,7 @@ minimum_balance = (account_data_len + 128) * 6,960 lamports
 - 每个 `Receipt`：
   - `(98 + 128) * 6,960 = 1,572,960 lamports = 0.00157296 SOL`
 - 每个 `Challenge`：
-  - `(164 + 128) * 6,960 = 2,032,320 lamports = 0.00203232 SOL`
+  - `(124 + 128) * 6,960 = 1,753,920 lamports = 0.00175392 SOL`
 
 重要说明：
 
@@ -324,7 +343,7 @@ receipt_peak_sol
 
 ```text
 receipt_plus_challenge_peak_sol
-  = daily_call_count * challenge_window_days * 0.00360528
+  = daily_call_count * challenge_window_days * 0.00332688
 ```
 
 ### 仅 Receipt 的峰值占用
@@ -343,9 +362,9 @@ receipt_plus_challenge_peak_sol
 
 | 每日调用量 | 1 天窗口 | 3 天窗口 | 7 天窗口 |
 |---|---:|---:|---:|
-| 1,000 | 3.60528 SOL | 10.81584 SOL | 25.23696 SOL |
-| 10,000 | 36.0528 SOL | 108.1584 SOL | 252.3696 SOL |
-| 100,000 | 360.528 SOL | 1081.584 SOL | 2523.696 SOL |
+| 1,000 | 3.32688 SOL | 9.98064 SOL | 23.28816 SOL |
+| 10,000 | 33.2688 SOL | 99.8064 SOL | 232.8816 SOL |
+| 100,000 | 332.688 SOL | 998.064 SOL | 2328.816 SOL |
 
 ### 如何理解这些数字
 
@@ -361,7 +380,7 @@ receipt_plus_challenge_peak_sol
 
 实现位置：
 
-- [admin.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/programs/clawfarm-attestation/src/instructions/admin.rs#L10)
+- [admin.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/programs/clawfarm-attestation/src/instructions/admin.rs#L11)
 
 签名：
 
@@ -372,7 +391,6 @@ pub fn initialize_config(
     pause_authority: Pubkey,
     challenge_resolver: Pubkey,
     challenge_window_seconds: i64,
-    response_window_seconds: i64,
 ) -> Result<()>
 ```
 
@@ -386,13 +404,12 @@ pub fn initialize_config(
 
 - `authority`：主治理权限地址
 - `pause_authority`：可切换 pause 的权限地址
-- `challenge_resolver`：可裁决 challenge 的权限地址
+- `challenge_resolver`：可裁决 challenge 的权限地址，通常由 Clawfarm 的自动化 resolver 机器人持有
 - `challenge_window_seconds`：receipt 可被 challenge 的窗口，必须 `> 0`
-- `response_window_seconds`：治理方响应窗口，必须 `> 0`
 
 功能流程：
 
-1. 校验两个窗口值都大于 0
+1. 校验 challenge window 大于 0
 2. 初始化 config PDA
 3. 写入治理地址和时间窗口
 4. 将 `receipt_count` 和 `challenge_count` 置零
@@ -409,7 +426,7 @@ pub fn initialize_config(
 
 实现位置：
 
-- [admin.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/programs/clawfarm-attestation/src/instructions/admin.rs#L37)
+- [admin.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/programs/clawfarm-attestation/src/instructions/admin.rs#L40)
 
 签名：
 
@@ -464,7 +481,7 @@ pub fn upsert_provider_signer(
 
 实现位置：
 
-- [admin.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/programs/clawfarm-attestation/src/instructions/admin.rs#L83)
+- [admin.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/programs/clawfarm-attestation/src/instructions/admin.rs#L85)
 
 签名：
 
@@ -499,7 +516,7 @@ pub fn set_pause(ctx: Context<SetPause>, is_paused: bool) -> Result<()>
 
 实现位置：
 
-- [admin.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/programs/clawfarm-attestation/src/instructions/admin.rs#L91)
+- [admin.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/programs/clawfarm-attestation/src/instructions/admin.rs#L93)
 
 签名：
 
@@ -666,7 +683,7 @@ pub fn open_challenge(
 3. 检查 receipt 当前仍是 `Submitted`
 4. 检查当前时间仍在 challenge window 内
 5. 创建 `Challenge` PDA
-6. 写入 challenger、evidence hash、deadline 和状态
+6. 写入 challenger、evidence hash、时间戳和状态
 7. 将 receipt 状态设为 `Challenged`
 8. 递增 `config.challenge_count`
 9. 发出 `ChallengeOpened`
@@ -676,59 +693,11 @@ pub fn open_challenge(
 - 一条 challenge 被创建
 - receipt 进入 `Challenged` 状态
 
-## 7. `respond_challenge`
+## 7. `resolve_challenge`
 
 实现位置：
 
-- [challenge.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/programs/clawfarm-attestation/src/instructions/challenge.rs#L57)
-
-签名：
-
-```rust
-pub fn respond_challenge(
-    ctx: Context<RespondChallenge>,
-    request_nonce: String,
-    challenge_type: u8,
-    challenger: Pubkey,
-    response_hash: [u8; 32],
-) -> Result<()>
-```
-
-账户：
-
-- `responder`：签名者，必须是 `config.authority` 或 `config.challenge_resolver`
-- `config`：config PDA
-- `receipt`：关联 receipt PDA
-- `challenge`：目标 challenge PDA
-
-入参说明：
-
-- `request_nonce`：用于导出 receipt PDA
-- `challenge_type`：目标 challenge 类型
-- `challenger`：原始 challenger 公钥
-- `response_hash`：链下响应材料哈希
-
-功能流程：
-
-1. 校验 `request_nonce`
-2. 校验 `challenge_type`
-3. 检查 responder 具有治理权限
-4. 检查 challenge 的 challenger 和 type 匹配
-5. 检查 challenge 当前是 `Open`
-6. 检查未超过 `response_deadline`
-7. 写入 `response_hash`
-8. 将 challenge 状态设为 `Responded`
-9. 发出 `ChallengeResponded`
-
-结果：
-
-- challenge 附带了响应锚点，进入待最终裁决状态
-
-## 8. `resolve_challenge`
-
-实现位置：
-
-- [challenge.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/programs/clawfarm-attestation/src/instructions/challenge.rs#L102)
+- [challenge.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/programs/clawfarm-attestation/src/instructions/challenge.rs#L55)
 
 签名：
 
@@ -762,7 +731,7 @@ pub fn resolve_challenge(
 2. 校验 `challenge_type`
 3. 校验 `resolution_code`，且不能是 `None`
 4. 检查 challenge 的 challenger 和 type 匹配
-5. 检查 challenge 当前是 `Open` 或 `Responded`
+5. 检查 challenge 当前是 `Open`
 6. 写入 `resolution_code` 和 `resolved_at`
 7. 将 receipt 直接推进到终态：
    - `Accepted` 或 `ReceiptInvalidated` -> `Rejected`
@@ -775,7 +744,7 @@ pub fn resolve_challenge(
 
 - receipt 离开 active dispute 状态，后续可进入 close 流程
 
-## 9. `finalize_receipt`
+## 8. `finalize_receipt`
 
 实现位置：
 
@@ -810,11 +779,11 @@ pub fn finalize_receipt(ctx: Context<FinalizeReceipt>, request_nonce: String) ->
 
 - 未被 challenge 的 receipt 进入终态，可后续 close
 
-## 10. `close_challenge`
+## 9. `close_challenge`
 
 实现位置：
 
-- [challenge.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/programs/clawfarm-attestation/src/instructions/challenge.rs#L165)
+- [challenge.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/programs/clawfarm-attestation/src/instructions/challenge.rs#L117)
 
 签名：
 
@@ -854,7 +823,7 @@ pub fn close_challenge(
 
 - challenge 的 rent 退回给 `recipient`
 
-## 11. `close_receipt`
+## 10. `close_receipt`
 
 实现位置：
 
@@ -914,11 +883,6 @@ Challenge 状态机：
 
 ```text
 Open
-  -> Responded
-  -> Accepted
-  -> Rejected
-
-Responded
   -> Accepted
   -> Rejected
 ```
@@ -943,7 +907,6 @@ Responded
 - `ReceiptFinalized`
 - `ReceiptClosed`
 - `ChallengeOpened`
-- `ChallengeResponded`
 - `ChallengeResolved`
 - `ChallengeClosed`
 
