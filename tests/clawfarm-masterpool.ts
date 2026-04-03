@@ -67,7 +67,7 @@ describe("clawfarm-masterpool", () => {
         clawMint: clawMint,
         deployer: deployer.publicKey,
         systemProgram: SystemProgram.programId,
-      })
+      } as any)
       .rpc();
 
     const config = await program.account.clawFarmConfig.fetch(configPda);
@@ -93,7 +93,7 @@ describe("clawfarm-masterpool", () => {
         tokenProgram: TOKEN_PROGRAM_ID,
         systemProgram: SystemProgram.programId,
         rent: anchor.web3.SYSVAR_RENT_PUBKEY,
-      })
+      } as any)
       .rpc();
 
     const config = await program.account.clawFarmConfig.fetch(configPda);
@@ -113,7 +113,7 @@ describe("clawfarm-masterpool", () => {
         tokenProgram: TOKEN_PROGRAM_ID,
         systemProgram: SystemProgram.programId,
         rent: anchor.web3.SYSVAR_RENT_PUBKEY,
-      })
+      } as any)
       .rpc();
 
     const config = await program.account.clawFarmConfig.fetch(configPda);
@@ -131,7 +131,7 @@ describe("clawfarm-masterpool", () => {
         poolAuthority: poolAuthorityPda,
         deployer: deployer.publicKey,
         tokenProgram: TOKEN_PROGRAM_ID,
-      })
+      } as any)
       .rpc();
 
     const config = await program.account.clawFarmConfig.fetch(configPda);
@@ -150,7 +150,7 @@ describe("clawfarm-masterpool", () => {
           poolAuthority: poolAuthorityPda,
           deployer: deployer.publicKey,
           tokenProgram: TOKEN_PROGRAM_ID,
-        })
+        } as any)
         .rpc();
       assert.fail("Should have thrown");
     } catch (e: any) {
@@ -168,7 +168,7 @@ describe("clawfarm-masterpool", () => {
         poolAuthority: poolAuthorityPda,
         deployer: deployer.publicKey,
         tokenProgram: TOKEN_PROGRAM_ID,
-      })
+      } as any)
       .rpc();
 
     const config = await program.account.clawFarmConfig.fetch(configPda);
@@ -185,7 +185,7 @@ describe("clawfarm-masterpool", () => {
         poolAuthority: poolAuthorityPda,
         deployer: deployer.publicKey,
         tokenProgram: TOKEN_PROGRAM_ID,
-      })
+      } as any)
       .rpc();
 
     const config = await program.account.clawFarmConfig.fetch(configPda);

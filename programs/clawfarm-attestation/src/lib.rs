@@ -10,7 +10,8 @@ use anchor_lang::{
         load_current_index_checked, load_instruction_at_checked,
     },
 };
-use solana_program::{hash::hash, sysvar::instructions::ID as INSTRUCTIONS_SYSVAR_ID};
+use solana_sdk_ids::{ed25519_program, sysvar::instructions::ID as INSTRUCTIONS_SYSVAR_ID};
+use solana_sha256_hasher::hash;
 
 declare_id!("52WWsrQQcpAJn4cjSxMe4XGBvgGzPXa9gjAqUSfryAx2");
 
@@ -504,6 +505,7 @@ pub struct SubmitReceipt<'info> {
     #[account(mut)]
     pub payer: Signer<'info>,
     #[account(
+        mut,
         seeds = [CONFIG_SEED],
         bump = config.bump
     )]
@@ -1184,7 +1186,7 @@ fn verify_preceding_ed25519_instruction(
     let ix = load_instruction_at_checked(usize::from(current_index - 1), instructions_sysvar)
         .map_err(|_| error!(ErrorCode::MissingEd25519Instruction))?;
     require!(
-        ix.program_id == solana_program::ed25519_program::id(),
+        ix.program_id == ed25519_program::id(),
         ErrorCode::MissingEd25519Instruction
     );
     require!(ix.accounts.is_empty(), ErrorCode::Ed25519InstructionMismatch);
@@ -1381,7 +1383,7 @@ mod tests {
     use anchor_lang::solana_program::sysvar::instructions::{
         construct_instructions_data, BorrowedInstruction,
     };
-    use solana_program::{
+    use anchor_lang::solana_program::{
         account_info::AccountInfo,
         clock::Epoch,
         instruction::{Instruction, AccountMeta},
@@ -1425,7 +1427,7 @@ mod tests {
         let signature = [9; 64];
         let message = [5; 32];
         let ed25519_ix = Instruction {
-            program_id: solana_program::ed25519_program::id(),
+            program_id: ed25519_program::id(),
             accounts: vec![],
             data: build_test_ed25519_ix_data(&signer, &signature, &message),
         };
