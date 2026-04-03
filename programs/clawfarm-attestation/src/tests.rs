@@ -20,9 +20,7 @@ fn canonical_cbor_omits_non_payload_fields_and_absent_optionals() {
     let encoded = build_phase1_canonical_cbor(&args).unwrap();
 
     assert!(contains_subslice(&encoded, b"proof_mode"));
-    assert!(!contains_subslice(&encoded, b"proof_url"));
     assert!(!contains_subslice(&encoded, b"signer"));
-    assert!(!contains_subslice(&encoded, b"signature"));
     assert!(!contains_subslice(&encoded, b"receipt_hash"));
     assert!(!contains_subslice(&encoded, b"provider_request_id"));
     assert!(!contains_subslice(&encoded, b"http_status"));

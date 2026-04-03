@@ -65,20 +65,14 @@ PDA Seed：
 
 字段：
 
-- `provider_code`
-- `signer`
-- `key_id`
 - `attester_type_mask`
 - `status`
 - `valid_from`
 - `valid_until`
-- `metadata_hash`
-- `created_at`
-- `updated_at`
 
 用途：
 
-- 链上 Provider / Gateway Signer 注册表
+- 以 provider code 和 signer pubkey 为键的最小化链上 signer 策略
 
 ### `Receipt`
 
@@ -273,19 +267,28 @@ Canonicalization 逻辑见 [utils.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-m
 
 推荐工作循环：
 
-1. 监听新的 `ChallengeOpened` 事件，或定时扫描状态仍为 `Open` 的 challenge PDA
-2. 通过 Clawfarm 索引读取关联 receipt，并从链下存储拉取完整 canonical receipt 与 challenge 证据
-3. 在链下重建 dispute package，并按 `challenge_type` 执行 Clawfarm 自己的校验逻辑
-4. 根据校验结果归约成单个 `resolution_code`：
+1. 订阅 `ReceiptSubmitted`、`ChallengeOpened`、`ChallengeResolved` 和
+   `ReceiptClosed`，在链下维护一个以 `receipt` pubkey 为键的工作队列
+2. 把 `ReceiptSubmitted.receipt` + `ReceiptSubmitted.challenge_deadline` 作为
+   “当前开放 receipt” 的主索引，用来做监控和后续 finalize 调度
+3. 收到 `ChallengeOpened` 后，把 dispute job 绑定到该 receipt，再从链下
+   存储拉取完整 canonical receipt 与 challenge 证据
+4. 在链下重建 dispute package，并按 `challenge_type` 执行 Clawfarm 自己的校验逻辑
+5. 根据校验结果归约成单个 `resolution_code`：
    - challenge 不成立时用 `Rejected`
    - receipt 无效时用 `Accepted` 或 `ReceiptInvalidated`
    - signer 需要连带惩罚和撤销时用 `SignerRevoked`
-5. 由机器人控制的 `challenge_resolver` 权限地址发起 `resolve_challenge`
-6. receipt 和 challenge 进入终态后，再执行 `close_challenge` 与 `close_receipt` 回收 rent
+6. 由机器人控制的 `challenge_resolver` 权限地址发起 `resolve_challenge`
+7. 对没有 challenge 的 receipt，在 `challenge_deadline` 到点后调用
+   `finalize_receipt`；进入终态后，再由 `config.authority` 执行
+   `close_challenge` / `close_receipt`
 
 运维建议：
 
 - 机器人在链上尽量保持无状态，持久事实来源应仍然是 Clawfarm 索引和链上的 receipt/challenge PDA
+- 如果需要冷启动重建，可先扫描 `ReceiptSubmitted`，再依次折叠
+  `ChallengeOpened` / `ChallengeResolved` / `ReceiptFinalized` / `ReceiptClosed`
+  来恢复当前 live 队列
 - 链下校验逻辑要尽量确定性、可重放，保证后续审计时能解释某个 `resolution_code` 为什么成立
 - 调度要做成幂等；如果 RPC 提交失败或取证过程中断，机器人应能安全重试
 - 机器人日志里最好记录证据对象的版本号或内容哈希，方便追溯当时裁决使用的具体材料
@@ -421,11 +424,9 @@ pub fn upsert_provider_signer(
     ctx: Context<UpsertProviderSigner>,
     provider_code: String,
     signer: Pubkey,
-    key_id: String,
     attester_type_mask: u8,
     valid_from: i64,
     valid_until: i64,
-    metadata_hash: [u8; 32],
 ) -> Result<()>
 ```
 
@@ -440,24 +441,19 @@ pub fn upsert_provider_signer(
 
 - `provider_code`：provider 标识
 - `signer`：provider 或 gateway 的签名公钥
-- `key_id`：链下 key 标识
 - `attester_type_mask`：允许的 attester type 位图
 - `valid_from`：生效时间
 - `valid_until`：失效时间，`0` 表示不设上限
-- `metadata_hash`：链下 signer metadata 的哈希
 
 功能流程：
 
 1. 校验 `provider_code`
-2. 校验 `key_id`
-3. 要求 `attester_type_mask != 0`
-4. 要求 `valid_until == 0 || valid_until >= valid_from`
-5. 使用 `init_if_needed` 创建或复用 signer PDA
-6. 如果是旧账户则保留 `created_at`
-7. 覆盖写入 signer registry 字段
-8. 强制将状态设为 `Active`
-9. 更新时间戳
-10. 发出 `ProviderSignerUpserted`
+2. 要求 `attester_type_mask != 0`
+3. 要求 `valid_until == 0 || valid_until >= valid_from`
+4. 使用 `init_if_needed` 创建或复用 signer PDA
+5. 覆盖写入最小 signer 策略字段
+6. 强制将状态设为 `Active`
+7. 发出 `ProviderSignerUpserted`
 
 结果：
 
@@ -528,11 +524,9 @@ pub fn revoke_provider_signer(
 功能流程：
 
 1. 校验 `provider_code`
-2. 检查加载到的 signer 账户与 `provider_code` 一致
-3. 检查加载到的 signer 账户与 `signer` 一致
-4. 将状态改为 `Revoked`
-5. 更新 `updated_at`
-6. 发出 `ProviderSignerRevoked`
+2. 加载由 `provider_code` 和 `signer` 推导出的 signer PDA
+3. 将状态改为 `Revoked`
+4. 发出 `ProviderSignerRevoked`
 
 结果：
 
@@ -552,8 +546,8 @@ pub fn submit_receipt(ctx: Context<SubmitReceipt>, args: SubmitReceiptArgs) -> R
 
 账户：
 
-- `payer`：签名者，支付 `Receipt` 的 rent
-- `config`：只读 config PDA
+- `authority`：签名者，必须等于 `config.authority`，并支付 `Receipt` 的 rent
+- `config`：config PDA
 - `provider_signer`：signer registry PDA
 - `receipt`：由 `request_nonce` 导出的 receipt PDA
 - `instructions_sysvar`：Solana instruction sysvar，用于 `ed25519` introspection
@@ -611,20 +605,22 @@ pub struct SubmitReceiptArgs {
 
 功能流程：
 
-1. 校验所有结构化字段
-2. 检查程序未 pause
-3. 加载并校验 provider signer registry
-4. 在链上重建 canonical CBOR
-5. 计算哈希并要求其等于 `receipt_hash`
-6. 检查前一条交易指令是否为匹配的 `ed25519` 验签，且验证的是 `signer` 对 `receipt_hash` 的签名
-7. 创建 `Receipt` PDA
-8. 只写入 `receipt_hash`、`signer`、时间戳和状态
-9. 发出 `ReceiptSubmitted`
+1. 通过 Anchor 账户约束检查 `authority == config.authority`
+2. 校验所有结构化字段
+3. 检查程序未 pause
+4. 加载并校验 provider signer registry
+5. 在链上重建 canonical CBOR
+6. 计算哈希并要求其等于 `receipt_hash`
+7. 检查前一条交易指令是否为匹配的 `ed25519` 验签，且验证的是 `signer` 对 `receipt_hash` 的签名
+8. 创建 `Receipt` PDA
+9. 只写入 `receipt_hash`、`signer`、时间戳和状态
+10. 发出 `ReceiptSubmitted`，同时带上 `receipt` 和 `challenge_deadline` 供机器人索引
 
 结果：
 
 - 以该 `request_nonce` 为键的唯一 `Receipt` 账户创建成功
 - 完整 receipt 仍在链下，但被链上的 `receipt_hash` 锚定
+- 事件里直接给出 `receipt` pubkey 和 `challenge_deadline`，方便机器人建队列
 
 ## 6. `open_challenge`
 
@@ -751,21 +747,23 @@ pub fn close_challenge(ctx: Context<CloseChallenge>) -> Result<()>
 
 账户：
 
-- `recipient`：签名者，接收回收的 lamports
+- `authority`：签名者，必须等于 `config.authority`
+- `config`：config PDA
 - `challenge`：终态 challenge 账户
 
 功能流程：
 
-1. 检查 challenge 状态已是终态：
+1. 通过 Anchor 账户约束检查 `authority == config.authority`
+2. 检查 challenge 状态已是终态：
    - `Accepted`
    - `Rejected`
    - `Expired`
-2. 发出 `ChallengeClosed`
-3. 通过 Anchor 的 `close = recipient` 关闭 challenge 账户
+3. 发出 `ChallengeClosed`
+4. 通过 Anchor 的 `close = authority` 关闭 challenge 账户
 
 结果：
 
-- challenge 的 rent 退回给 `recipient`
+- challenge 的 rent 退回给 `config.authority`
 
 ## 10. `close_receipt`
 
@@ -781,21 +779,23 @@ pub fn close_receipt(ctx: Context<CloseReceipt>) -> Result<()>
 
 账户：
 
-- `recipient`：签名者，接收回收的 lamports
+- `authority`：签名者，必须等于 `config.authority`
+- `config`：config PDA
 - `receipt`：终态 receipt 账户
 
 功能流程：
 
-1. 检查 receipt 状态已是终态：
+1. 通过 Anchor 账户约束检查 `authority == config.authority`
+2. 检查 receipt 状态已是终态：
    - `Finalized`
    - `Rejected`
    - `Slashed`
-2. 发出 `ReceiptClosed`
-3. 通过 Anchor 的 `close = recipient` 关闭 receipt 账户
+3. 发出 `ReceiptClosed`
+4. 通过 Anchor 的 `close = authority` 关闭 receipt 账户
 
 结果：
 
-- receipt 的 rent 退回给 `recipient`
+- receipt 的 rent 退回给 `config.authority`
 
 ## 生命周期总结
 

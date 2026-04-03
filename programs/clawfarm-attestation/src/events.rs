@@ -11,7 +11,6 @@ pub struct ConfigInitialized {
 pub struct ProviderSignerUpserted {
     pub provider_code: String,
     pub signer: Pubkey,
-    pub key_id: String,
     pub attester_type_mask: u8,
 }
 
@@ -28,11 +27,13 @@ pub struct PauseUpdated {
 
 #[event]
 pub struct ReceiptSubmitted {
+    pub receipt: Pubkey,
     pub request_nonce: String,
     pub proof_id: String,
     pub provider: String,
     pub signer: Pubkey,
     pub receipt_hash: [u8; 32],
+    pub challenge_deadline: i64,
 }
 
 #[event]

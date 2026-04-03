@@ -33,7 +33,6 @@ MAX_REQUEST_NONCE_LEN        = 128
 MAX_PROOF_ID_LEN             = 128
 MAX_PROVIDER_LEN             = 64
 MAX_MODEL_LEN                = 255
-MAX_KEY_ID_LEN               = 128
 MAX_PROVIDER_REQUEST_ID_LEN  = 255
 ```
 
@@ -98,10 +97,9 @@ Phase 1 accepts only `0`.
 
 ```text
 0 = open
-1 = responded
-2 = accepted
-3 = rejected
-4 = expired
+1 = accepted
+2 = rejected
+3 = expired
 ```
 
 Note:
@@ -156,23 +154,17 @@ ALLOCATED  = 113
 Logical fields:
 
 ```text
-provider_code: String              // <= 64
-signer: Pubkey
-key_id: String                     // <= 128
 attester_type_mask: u8
 status: u8
 valid_from: i64
 valid_until: i64
-metadata_hash: [u8; 32]
-created_at: i64
-updated_at: i64
 ```
 
 Account size:
 
 ```text
-INIT_SPACE = 298
-ALLOCATED  = 306
+INIT_SPACE = 18
+ALLOCATED  = 26
 ```
 
 ## `Receipt`
@@ -250,11 +242,9 @@ Args:
 ```rust
 provider_code: String
 signer: Pubkey
-key_id: String
 attester_type_mask: u8
 valid_from: i64
 valid_until: i64
-metadata_hash: [u8; 32]
 ```
 
 Accounts:
@@ -334,7 +324,7 @@ SubmitReceiptArgs {
 Accounts:
 
 ```text
-[writable, signer] payer
+[writable, signer] authority
 []                 config
 []                 provider_signer
 [writable]         receipt
@@ -428,12 +418,14 @@ Args:
 Accounts:
 
 ```text
-[writable, signer] recipient
+[signer]           authority
+[]                 config
 [writable]         challenge
 ```
 
 Runtime rule:
 
+- `authority` must satisfy `config.has_one = authority`
 - challenge must already be terminal
 
 ## 10. `close_receipt`
@@ -447,7 +439,8 @@ Args:
 Accounts:
 
 ```text
-[writable, signer] recipient
+[signer]           authority
+[]                 config
 [writable]         receipt
 ```
 

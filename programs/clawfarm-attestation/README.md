@@ -67,20 +67,14 @@ PDA seed:
 
 Fields:
 
-- `provider_code`
-- `signer`
-- `key_id`
 - `attester_type_mask`
 - `status`
 - `valid_from`
 - `valid_until`
-- `metadata_hash`
-- `created_at`
-- `updated_at`
 
 Purpose:
 
-- on-chain signer registry for providers or gateways
+- minimal on-chain signer policy keyed by provider code and signer pubkey
 
 ### `Receipt`
 
@@ -286,25 +280,32 @@ human-operated wallet.
 
 Recommended loop:
 
-1. watch for newly opened `ChallengeOpened` events or poll challenge PDAs whose
-   status is still `Open`
-2. load the referenced receipt from the Clawfarm index and fetch the full
-   canonical receipt plus challenge evidence from off-chain storage
-3. reconstruct the dispute package off-chain and run Clawfarm-specific
+1. subscribe to `ReceiptSubmitted`, `ChallengeOpened`, `ChallengeResolved`, and
+   `ReceiptClosed`; keep an off-chain queue keyed by `receipt` pubkey
+2. treat `ReceiptSubmitted.receipt` + `ReceiptSubmitted.challenge_deadline` as
+   the canonical source for "open receipts" that still need monitoring or
+   later finalization
+3. use `ChallengeOpened` to attach dispute jobs to that receipt, then fetch the
+   full canonical receipt plus challenge evidence from off-chain storage
+4. reconstruct the dispute package off-chain and run Clawfarm-specific
    verification logic for the requested `challenge_type`
-4. derive a single `resolution_code` from that verification result:
+5. derive a single `resolution_code` from that verification result:
    - `Rejected` if the challenge is not valid
    - `Accepted` or `ReceiptInvalidated` if the receipt is invalid
    - `SignerRevoked` if the signer should be slashed and revoked
-5. submit `resolve_challenge` from the bot-controlled `challenge_resolver`
+6. submit `resolve_challenge` from the bot-controlled `challenge_resolver`
    authority
-6. after the receipt and challenge are terminal, run the rent-reclaim flow with
-   `close_challenge` and `close_receipt`
+7. for uncontested receipts, wake up at `challenge_deadline` and call
+   `finalize_receipt`; once terminal, let `config.authority` run
+   `close_challenge` and `close_receipt` as needed
 
 Operational recommendations:
 
 - keep the resolver bot stateless on-chain; the durable source of truth should
   remain the Clawfarm index plus the on-chain receipt/challenge PDAs
+- if you need a cold-start rebuild, scan `ReceiptSubmitted` events first, then
+  fold in `ChallengeOpened` / `ChallengeResolved` / `ReceiptFinalized` /
+  `ReceiptClosed` to reconstruct the live work queue
 - make off-chain verification deterministic and replayable so a later audit can
   explain why a specific `resolution_code` was chosen
 - use idempotent job scheduling; the bot should safely retry if an RPC call or
@@ -446,11 +447,9 @@ pub fn upsert_provider_signer(
     ctx: Context<UpsertProviderSigner>,
     provider_code: String,
     signer: Pubkey,
-    key_id: String,
     attester_type_mask: u8,
     valid_from: i64,
     valid_until: i64,
-    metadata_hash: [u8; 32],
 ) -> Result<()>
 ```
 
@@ -465,24 +464,19 @@ Input parameters:
 
 - `provider_code`: provider identifier
 - `signer`: provider or gateway signer public key
-- `key_id`: off-chain key identifier
 - `attester_type_mask`: bitmask of supported attester types
 - `valid_from`: signer validity start
 - `valid_until`: signer validity end, `0` means open-ended
-- `metadata_hash`: hash of signer metadata stored off-chain
 
 Function flow:
 
 1. validates `provider_code`
-2. validates `key_id`
-3. requires `attester_type_mask != 0`
-4. requires `valid_until == 0 || valid_until >= valid_from`
-5. creates or reuses the signer PDA via `init_if_needed`
-6. preserves `created_at` if the account already exists
-7. overwrites signer registry fields with new values
-8. sets `status = Active`
-9. updates timestamps
-10. emits `ProviderSignerUpserted`
+2. requires `attester_type_mask != 0`
+3. requires `valid_until == 0 || valid_until >= valid_from`
+4. creates or reuses the signer PDA via `init_if_needed`
+5. overwrites the minimal signer policy fields
+6. sets `status = Active`
+7. emits `ProviderSignerUpserted`
 
 Result:
 
@@ -553,11 +547,9 @@ Input parameters:
 Function flow:
 
 1. validates `provider_code`
-2. checks the loaded signer account matches `provider_code`
-3. checks the loaded signer account matches `signer`
-4. sets status to `Revoked`
-5. updates `updated_at`
-6. emits `ProviderSignerRevoked`
+2. loads the signer PDA derived from `provider_code` and `signer`
+3. sets status to `Revoked`
+4. emits `ProviderSignerRevoked`
 
 Result:
 
@@ -577,8 +569,8 @@ pub fn submit_receipt(ctx: Context<SubmitReceipt>, args: SubmitReceiptArgs) -> R
 
 Accounts:
 
-- `payer`: signer, pays rent for `Receipt`
-- `config`: config PDA, read-only governance config
+- `authority`: signer, must equal `config.authority`, and pays rent for `Receipt`
+- `config`: config PDA
 - `provider_signer`: signer registry PDA
 - `receipt`: receipt PDA derived from `request_nonce`
 - `instructions_sysvar`: Solana instruction sysvar, used for `ed25519` introspection
@@ -636,20 +628,22 @@ Parameter meaning:
 
 Function flow:
 
-1. validates all structured fields
-2. checks the program is not paused
-3. loads and validates the provider signer registry entry
-4. rebuilds canonical CBOR on-chain
-5. hashes the canonical payload and requires it to match `receipt_hash`
-6. inspects the previous transaction instruction and requires a matching `ed25519` verification for `signer` and `receipt_hash`
-7. creates the `Receipt` PDA
-8. stores only `receipt_hash`, `signer`, timestamps, and status
-9. emits `ReceiptSubmitted`
+1. checks `authority == config.authority` through Anchor account constraints
+2. validates all structured fields
+3. checks the program is not paused
+4. loads and validates the provider signer registry entry
+5. rebuilds canonical CBOR on-chain
+6. hashes the canonical payload and requires it to match `receipt_hash`
+7. inspects the previous transaction instruction and requires a matching `ed25519` verification for `signer` and `receipt_hash`
+8. creates the `Receipt` PDA
+9. stores only `receipt_hash`, `signer`, timestamps, and status
+10. emits `ReceiptSubmitted` with `receipt` and `challenge_deadline` for bot indexing
 
 Result:
 
 - one unique `Receipt` account exists for the given `request_nonce`
 - the full receipt body remains off-chain but is anchored by `receipt_hash`
+- the emitted event gives the bot a direct `receipt` pubkey plus `challenge_deadline`
 
 ## 6. `open_challenge`
 
@@ -776,21 +770,23 @@ pub fn close_challenge(ctx: Context<CloseChallenge>) -> Result<()>
 
 Accounts:
 
-- `recipient`: signer, receives reclaimed lamports
+- `authority`: signer, must equal `config.authority`
+- `config`: config PDA
 - `challenge`: terminal challenge account
 
 Function flow:
 
-1. checks challenge status is terminal:
+1. checks `authority == config.authority` through Anchor account constraints
+2. checks challenge status is terminal:
    - `Accepted`
    - `Rejected`
    - `Expired`
-2. emits `ChallengeClosed`
-3. closes the challenge account through Anchor `close = recipient`
+3. emits `ChallengeClosed`
+4. closes the challenge account through Anchor `close = authority`
 
 Result:
 
-- challenge rent is returned to `recipient`
+- challenge rent is returned to `config.authority`
 
 ## 10. `close_receipt`
 
@@ -806,21 +802,23 @@ pub fn close_receipt(ctx: Context<CloseReceipt>) -> Result<()>
 
 Accounts:
 
-- `recipient`: signer, receives reclaimed lamports
+- `authority`: signer, must equal `config.authority`
+- `config`: config PDA
 - `receipt`: terminal receipt account
 
 Function flow:
 
-1. checks receipt status is terminal:
+1. checks `authority == config.authority` through Anchor account constraints
+2. checks receipt status is terminal:
    - `Finalized`
    - `Rejected`
    - `Slashed`
-2. emits `ReceiptClosed`
-3. closes the receipt account through Anchor `close = recipient`
+3. emits `ReceiptClosed`
+4. closes the receipt account through Anchor `close = authority`
 
 Result:
 
-- receipt rent is returned to `recipient`
+- receipt rent is returned to `config.authority`
 
 ## Lifecycle Summary
 

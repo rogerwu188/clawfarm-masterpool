@@ -5,7 +5,7 @@ use crate::{
     error::ErrorCode,
     events::{ConfigInitialized, PauseUpdated, ProviderSignerRevoked, ProviderSignerUpserted},
     state::{Config, ProviderSigner, SignerStatus},
-    utils::{provider_signer_seed, validate_key_id, validate_provider_code},
+    utils::{provider_signer_seed, validate_provider_code},
 };
 
 pub fn initialize_config(
@@ -36,40 +36,26 @@ pub fn upsert_provider_signer(
     ctx: Context<UpsertProviderSigner>,
     provider_code: String,
     signer: Pubkey,
-    key_id: String,
     attester_type_mask: u8,
     valid_from: i64,
     valid_until: i64,
-    metadata_hash: [u8; 32],
 ) -> Result<()> {
     validate_provider_code(&provider_code)?;
-    validate_key_id(&key_id)?;
     require!(attester_type_mask != 0, ErrorCode::InvalidAttesterTypeMask);
     require!(
         valid_until == 0 || valid_until >= valid_from,
         ErrorCode::InvalidValidityWindow
     );
 
-    let now = Clock::get()?.unix_timestamp;
     let provider_signer = &mut ctx.accounts.provider_signer;
-    if provider_signer.created_at == 0 {
-        provider_signer.created_at = now;
-    }
-
-    provider_signer.provider_code = provider_code.clone();
-    provider_signer.signer = signer;
-    provider_signer.key_id = key_id.clone();
     provider_signer.attester_type_mask = attester_type_mask;
     provider_signer.status = SignerStatus::Active as u8;
     provider_signer.valid_from = valid_from;
     provider_signer.valid_until = valid_until;
-    provider_signer.metadata_hash = metadata_hash;
-    provider_signer.updated_at = now;
 
     emit!(ProviderSignerUpserted {
         provider_code,
         signer,
-        key_id,
         attester_type_mask,
     });
     Ok(())
@@ -90,14 +76,7 @@ pub fn revoke_provider_signer(
 ) -> Result<()> {
     validate_provider_code(&provider_code)?;
     let provider_signer = &mut ctx.accounts.provider_signer;
-    require!(
-        provider_signer.provider_code == provider_code,
-        ErrorCode::ProviderMismatch
-    );
-    require!(provider_signer.signer == signer, ErrorCode::SignerMismatch);
-
     provider_signer.status = SignerStatus::Revoked as u8;
-    provider_signer.updated_at = Clock::get()?.unix_timestamp;
 
     emit!(ProviderSignerRevoked {
         provider_code,
@@ -125,11 +104,9 @@ pub struct InitializeConfig<'info> {
 #[instruction(
     provider_code: String,
     signer: Pubkey,
-    key_id: String,
     attester_type_mask: u8,
     valid_from: i64,
-    valid_until: i64,
-    metadata_hash: [u8; 32]
+    valid_until: i64
 )]
 pub struct UpsertProviderSigner<'info> {
     #[account(mut)]

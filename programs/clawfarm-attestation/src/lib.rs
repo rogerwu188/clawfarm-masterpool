@@ -60,21 +60,17 @@ pub mod clawfarm_attestation {
         ctx: Context<UpsertProviderSigner>,
         provider_code: String,
         signer: Pubkey,
-        key_id: String,
         attester_type_mask: u8,
         valid_from: i64,
         valid_until: i64,
-        metadata_hash: [u8; 32],
     ) -> Result<()> {
         instructions::admin::upsert_provider_signer(
             ctx,
             provider_code,
             signer,
-            key_id,
             attester_type_mask,
             valid_from,
             valid_until,
-            metadata_hash,
         )
     }
 
