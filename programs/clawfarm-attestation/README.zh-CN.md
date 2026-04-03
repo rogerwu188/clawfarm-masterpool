@@ -50,12 +50,14 @@ PDA Seed：
 - `authority`
 - `pause_authority`
 - `challenge_resolver`
+- `treasury`
 - `challenge_window_seconds`
+- `challenge_bond_lamports`
 - `is_paused`
 
 用途：
 
-- 全局治理和时间窗口配置
+- 全局治理、bond 托管地址和时间窗口配置
 
 ### `ProviderSigner`
 
@@ -99,7 +101,7 @@ PDA Seed：
 
 PDA Seed：
 
-- `["challenge", receipt.key(), challenge_type, challenger.key()]`
+- `["challenge", receipt.key()]`
 
 字段：
 
@@ -107,6 +109,7 @@ PDA Seed：
 - `challenger`
 - `challenge_type`
 - `evidence_hash`
+- `bond_lamports`
 - `opened_at`
 - `resolved_at`
 - `status`
@@ -114,7 +117,7 @@ PDA Seed：
 
 用途：
 
-- 针对某个 receipt 的单条争议实例
+- 针对某个 receipt 的唯一争议槽位
 
 ## 枚举值
 
@@ -161,11 +164,6 @@ Phase 1 只接受 `ProviderReported`。
 - `0 = Open`
 - `1 = Accepted`
 - `2 = Rejected`
-- `3 = Expired`
-
-说明：
-
-- `Expired` 目前只预留在枚举中，当前实现没有任何指令会写入该状态
 
 ### `ChallengeType`
 
@@ -251,7 +249,7 @@ Canonicalization 逻辑见 [utils.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-m
   - `challenge_deadline`
   - `finalized_at`
   - `receipt_status`
-  - `active_challenge_count`
+  - `has_open_challenge`
   - `next_action_at`
   - `last_event_slot`
   - `s3_bucket`
@@ -263,6 +261,7 @@ Canonicalization 逻辑见 [utils.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-m
   - `receipt`
   - `challenger`
   - `challenge_type`
+  - `bond_lamports`
   - `challenge_status`
   - `resolution_code`
   - `opened_at`
@@ -309,6 +308,15 @@ Canonicalization 逻辑见 [utils.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-m
    `config.authority` 发起 `finalize_receipt`；进入终态后，继续由
    `config.authority` 执行 `close_challenge` / `close_receipt`
 
+当前实现里的 bond 托管语义：
+
+- 每次 open challenge 都会把固定 lamport bond 转入 `config.treasury`
+- bond 金额会以 `challenge.bond_lamports` 形式快照到链上
+- 最终资金结算仍放在 Phase 1 之外：
+  - challenge 失败时，当前只在设计上记为后续给 Provider 的奖励流
+  - challenge 成功时，challenger 返还和 Provider 扣罚都延后到 treasury /
+    `master_pool` 联动阶段处理
+
 运维建议：
 
 - 机器人在链上尽量保持无状态，持久事实来源应仍然是 Clawfarm 索引和链上的 receipt/challenge PDA
@@ -326,7 +334,7 @@ Canonicalization 逻辑见 [utils.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-m
 ### 当前账户大小
 
 - `Receipt` 分配大小：`97 bytes`
-- `Challenge` 分配大小：`123 bytes`
+- `Challenge` 分配大小：`131 bytes`
 
 ### Rent 公式
 
@@ -341,7 +349,7 @@ minimum_balance = (account_data_len + 128) * 6,960 lamports
 - 每个 `Receipt`：
   - `(97 + 128) * 6,960 = 1,566,000 lamports = 0.001566 SOL`
 - 每个 `Challenge`：
-  - `(123 + 128) * 6,960 = 1,746,960 lamports = 0.00174696 SOL`
+  - `(131 + 128) * 6,960 = 1,802,640 lamports = 0.00180264 SOL`
 
 重要说明：
 
@@ -408,7 +416,9 @@ pub fn initialize_config(
     authority: Pubkey,
     pause_authority: Pubkey,
     challenge_resolver: Pubkey,
+    treasury: Pubkey,
     challenge_window_seconds: i64,
+    challenge_bond_lamports: u64,
 ) -> Result<()>
 ```
 
@@ -423,13 +433,15 @@ pub fn initialize_config(
 - `authority`：主治理权限地址
 - `pause_authority`：可切换 pause 的权限地址
 - `challenge_resolver`：可裁决 challenge 的权限地址，通常由 Clawfarm 的自动化 resolver 机器人持有
+- `treasury`：open challenge 时接收 lamport bond 托管的地址
 - `challenge_window_seconds`：receipt 可被 challenge 的窗口，必须 `> 0`
+- `challenge_bond_lamports`：发起一次 challenge 需要提交的固定 lamport bond，必须 `> 0`
 
 功能流程：
 
-1. 校验 challenge window 大于 0
+1. 校验 challenge window 和 bond 金额都大于 0
 2. 初始化 config PDA
-3. 写入治理地址和时间窗口
+3. 写入治理地址、treasury 和时间窗口
 4. 设置 `is_paused = false`
 5. 发出 `ConfigInitialized`
 
@@ -667,8 +679,10 @@ pub fn open_challenge(
 账户：
 
 - `challenger`：签名者，支付 `Challenge` 的 rent
+- `config`：包含 treasury 地址和固定 bond 金额的 config PDA
 - `receipt`：目标 receipt 账户
-- `challenge`：由 `(receipt, challenge_type, challenger)` 导出的 challenge PDA
+- `challenge`：由 `(receipt)` 导出的 challenge PDA
+- `treasury`：可写 system account，必须等于 `config.treasury`
 - `system_program`
 
 入参说明：
@@ -681,15 +695,17 @@ pub fn open_challenge(
 1. 校验 `challenge_type`
 2. 检查 receipt 当前仍是 `Submitted`
 3. 检查当前时间仍在 challenge window 内
-4. 创建 `Challenge` PDA
-5. 写入 challenger、evidence hash、时间戳和状态
-6. 将 receipt 状态设为 `Challenged`
-7. 发出 `ChallengeOpened`
+4. 把 `config.challenge_bond_lamports` 从 `challenger` 转入 `config.treasury`
+5. 为该 receipt 创建唯一 `Challenge` PDA
+6. 写入 challenger、evidence hash、bond 快照、时间戳和状态
+7. 将 receipt 状态设为 `Challenged`
+8. 发出 `ChallengeOpened`
 
 结果：
 
-- 一条 challenge 被创建
+- receipt 的唯一 challenge 被创建
 - receipt 进入 `Challenged` 状态
+- challenger 的 bond 已托管到 `config.treasury`
 
 ## 7. `resolve_challenge`
 
@@ -786,7 +802,6 @@ pub fn close_challenge(ctx: Context<CloseChallenge>) -> Result<()>
 2. 检查 challenge 状态已是终态：
    - `Accepted`
    - `Rejected`
-   - `Expired`
 3. 发出 `ChallengeClosed`
 4. 通过 Anchor 的 `close = authority` 关闭 challenge 账户
 
@@ -859,7 +874,6 @@ Open
 
 - `Accepted`
 - `Rejected`
-- `Expired`
 
 ## Events
 

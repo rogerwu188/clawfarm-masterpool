@@ -45,14 +45,18 @@ pub mod clawfarm_attestation {
         authority: Pubkey,
         pause_authority: Pubkey,
         challenge_resolver: Pubkey,
+        treasury: Pubkey,
         challenge_window_seconds: i64,
+        challenge_bond_lamports: u64,
     ) -> Result<()> {
         instructions::admin::initialize_config(
             ctx,
             authority,
             pause_authority,
             challenge_resolver,
+            treasury,
             challenge_window_seconds,
+            challenge_bond_lamports,
         )
     }
 

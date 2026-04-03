@@ -2,7 +2,7 @@
 
 Status: Implemented
 Version: v1
-Last Updated: 2026-04-03
+Last Updated: 2026-04-04
 
 This document reflects the current ABI of the dedicated
 `clawfarm_attestation` Solana program in this repository.
@@ -99,12 +99,7 @@ Phase 1 accepts only `0`.
 0 = open
 1 = accepted
 2 = rejected
-3 = expired
 ```
-
-Note:
-
-- `expired` is part of the enum but no current instruction writes it
 
 ### `ChallengeType`
 
@@ -138,15 +133,17 @@ Logical fields:
 authority: Pubkey
 pause_authority: Pubkey
 challenge_resolver: Pubkey
+treasury: Pubkey
 challenge_window_seconds: i64
+challenge_bond_lamports: u64
 is_paused: bool
 ```
 
 Account size:
 
 ```text
-INIT_SPACE = 105
-ALLOCATED  = 113
+INIT_SPACE = 145
+ALLOCATED  = 153
 ```
 
 ## `ProviderSigner`
@@ -201,6 +198,7 @@ receipt: Pubkey
 challenger: Pubkey
 challenge_type: u8
 evidence_hash: [u8; 32]
+bond_lamports: u64
 opened_at: i64
 resolved_at: i64
 status: u8
@@ -210,8 +208,8 @@ resolution_code: u8
 Account size:
 
 ```text
-INIT_SPACE = 115
-ALLOCATED  = 123
+INIT_SPACE = 123
+ALLOCATED  = 131
 ```
 
 ## Instruction ABI
@@ -224,7 +222,9 @@ Args:
 authority: Pubkey
 pause_authority: Pubkey
 challenge_resolver: Pubkey
+treasury: Pubkey
 challenge_window_seconds: i64
+challenge_bond_lamports: u64
 ```
 
 Accounts:
@@ -234,6 +234,11 @@ Accounts:
 [writable]         config
 []                 system_program
 ```
+
+Runtime rules:
+
+- `challenge_window_seconds > 0`
+- `challenge_bond_lamports > 0`
 
 ## 2. `upsert_provider_signer`
 
@@ -350,14 +355,18 @@ Accounts:
 
 ```text
 [writable, signer] challenger
+[ ]                config
 [writable]         receipt
 [writable]         challenge
+[writable]         treasury
 []                 system_program
 ```
 
 Runtime rule:
 
 - receipt must be in `submitted` state
+- `treasury` must equal `config.treasury`
+- `config.challenge_bond_lamports` is transferred from challenger to treasury
 
 ## 7. `resolve_challenge`
 

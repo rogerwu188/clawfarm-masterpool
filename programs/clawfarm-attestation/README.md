@@ -52,12 +52,14 @@ Fields:
 - `authority`
 - `pause_authority`
 - `challenge_resolver`
+- `treasury`
 - `challenge_window_seconds`
+- `challenge_bond_lamports`
 - `is_paused`
 
 Purpose:
 
-- global governance and timing config
+- global governance, bond escrow destination, and timing config
 
 ### `ProviderSigner`
 
@@ -101,7 +103,7 @@ Purpose:
 
 PDA seed:
 
-- `["challenge", receipt.key(), challenge_type, challenger.key()]`
+- `["challenge", receipt.key()]`
 
 Fields:
 
@@ -109,6 +111,7 @@ Fields:
 - `challenger`
 - `challenge_type`
 - `evidence_hash`
+- `bond_lamports`
 - `opened_at`
 - `resolved_at`
 - `status`
@@ -116,7 +119,7 @@ Fields:
 
 Purpose:
 
-- one dispute instance against one receipt and one challenge type
+- one dispute slot against one receipt
 
 ## Enum Values
 
@@ -163,11 +166,6 @@ Phase 1 only accepts `ProviderReported`.
 - `0 = Open`
 - `1 = Accepted`
 - `2 = Rejected`
-- `3 = Expired`
-
-Note:
-
-- `Expired` is reserved in the enum but not currently written by any instruction
 
 ### `ChallengeType`
 
@@ -263,7 +261,7 @@ space:
   - `challenge_deadline`
   - `finalized_at`
   - `receipt_status`
-  - `active_challenge_count`
+  - `has_open_challenge`
   - `next_action_at`
   - `last_event_slot`
   - `s3_bucket`
@@ -275,6 +273,7 @@ space:
   - `receipt`
   - `challenger`
   - `challenge_type`
+  - `bond_lamports`
   - `challenge_status`
   - `resolution_code`
   - `opened_at`
@@ -326,6 +325,16 @@ Recommended loop:
    `finalize_receipt` from `config.authority`; once terminal, keep using
    `config.authority` for `close_challenge` and `close_receipt` as needed
 
+Bond escrow in the current implementation:
+
+- every open challenge transfers a fixed lamport bond to `config.treasury`
+- the bond amount is snapshotted on-chain as `challenge.bond_lamports`
+- final settlement stays outside Phase 1:
+  - if the challenge is rejected, the bond is only recorded in design as
+    future provider reward flow
+  - if the challenge is accepted, the refund to the challenger and any provider
+    slash are deferred to later treasury / `master_pool` integration
+
 Operational recommendations:
 
 - keep the resolver bot stateless on-chain; the durable source of truth should
@@ -348,7 +357,7 @@ on-chain and closing terminal accounts as soon as possible.
 ### Current account sizes
 
 - `Receipt` allocated size: `97 bytes`
-- `Challenge` allocated size: `123 bytes`
+- `Challenge` allocated size: `131 bytes`
 
 ### Rent formula
 
@@ -361,7 +370,7 @@ minimum_balance = (account_data_len + 128) * 6,960 lamports
 That gives:
 
 - per `Receipt`: `(97 + 128) * 6,960 = 1,566,000 lamports = 0.001566 SOL`
-- per `Challenge`: `(123 + 128) * 6,960 = 1,746,960 lamports = 0.00174696 SOL`
+- per `Challenge`: `(131 + 128) * 6,960 = 1,802,640 lamports = 0.00180264 SOL`
 
 Important:
 
@@ -431,7 +440,9 @@ pub fn initialize_config(
     authority: Pubkey,
     pause_authority: Pubkey,
     challenge_resolver: Pubkey,
+    treasury: Pubkey,
     challenge_window_seconds: i64,
+    challenge_bond_lamports: u64,
 ) -> Result<()>
 ```
 
@@ -446,13 +457,15 @@ Input parameters:
 - `authority`: main governance authority
 - `pause_authority`: authority allowed to toggle pause
 - `challenge_resolver`: resolver authority, typically an automated Clawfarm bot, allowed to resolve disputes
+- `treasury`: lamport escrow destination for open challenge bonds
 - `challenge_window_seconds`: receipt challenge window, must be `> 0`
+- `challenge_bond_lamports`: fixed lamport bond required to open one challenge, must be `> 0`
 
 Function flow:
 
-1. checks the challenge window value is positive
+1. checks the challenge window and bond values are positive
 2. initializes the config PDA
-3. writes all governance addresses and timing values
+3. writes all governance addresses, treasury, and timing values
 4. sets `is_paused = false`
 5. emits `ConfigInitialized`
 
@@ -691,8 +704,10 @@ pub fn open_challenge(
 Accounts:
 
 - `challenger`: signer, pays rent for `Challenge`
+- `config`: config PDA with the treasury pubkey and fixed bond amount
 - `receipt`: target receipt account
-- `challenge`: challenge PDA for `(receipt, challenge_type, challenger)`
+- `challenge`: challenge PDA for `(receipt)`
+- `treasury`: writable system account, must equal `config.treasury`
 - `system_program`
 
 Input parameters:
@@ -705,15 +720,17 @@ Function flow:
 1. validates `challenge_type`
 2. checks the receipt is still `Submitted`
 3. checks current time is within the challenge window
-4. creates the `Challenge` PDA
-5. stores challenger, evidence hash, timestamps, and status
-6. sets the receipt status to `Challenged`
-7. emits `ChallengeOpened`
+4. transfers `config.challenge_bond_lamports` from `challenger` to `config.treasury`
+5. creates the single `Challenge` PDA for the receipt
+6. stores challenger, evidence hash, bond snapshot, timestamps, and status
+7. sets the receipt status to `Challenged`
+8. emits `ChallengeOpened`
 
 Result:
 
-- a dispute exists for this challenger and challenge type
+- one open dispute exists for the receipt
 - the receipt is now in `Challenged` state
+- the challenger bond is escrowed in `config.treasury`
 
 ## 7. `resolve_challenge`
 
@@ -811,7 +828,6 @@ Function flow:
 2. checks challenge status is terminal:
    - `Accepted`
    - `Rejected`
-   - `Expired`
 3. emits `ChallengeClosed`
 4. closes the challenge account through Anchor `close = authority`
 
@@ -884,7 +900,6 @@ Closable challenge states:
 
 - `Accepted`
 - `Rejected`
-- `Expired`
 
 ## Events
 

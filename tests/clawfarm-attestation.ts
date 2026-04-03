@@ -23,11 +23,13 @@ describe("clawfarm-attestation", () => {
   const authority = wallet.publicKey;
   const pauseAuthority = wallet.publicKey;
   const challengeResolver = wallet.publicKey;
+  const treasury = Keypair.generate();
   const providerCode = "unipass";
   const attesterType = 1;
   const attesterTypeMask = 1 << attesterType;
   const challengeType = 4;
   const resolutionRejected = 2;
+  const challengeBondLamports = new BN(500_000);
 
   const providerSigner = Keypair.generate();
   const challenger = Keypair.generate();
@@ -52,6 +54,7 @@ describe("clawfarm-attestation", () => {
 
     await airdrop(challenger.publicKey);
     await airdrop(outsider.publicKey);
+    await airdrop(treasury.publicKey);
   });
 
   it("initializes config", async () => {
@@ -60,7 +63,9 @@ describe("clawfarm-attestation", () => {
         authority,
         pauseAuthority,
         challengeResolver,
-        new BN(1)
+        treasury.publicKey,
+        new BN(1),
+        challengeBondLamports
       )
       .accounts({
         payer: wallet.publicKey,
@@ -73,6 +78,11 @@ describe("clawfarm-attestation", () => {
     assert.ok(config.authority.equals(authority));
     assert.ok(config.pauseAuthority.equals(pauseAuthority));
     assert.ok(config.challengeResolver.equals(challengeResolver));
+    assert.ok(config.treasury.equals(treasury.publicKey));
+    assert.equal(
+      config.challengeBondLamports.toString(),
+      challengeBondLamports.toString()
+    );
     assert.equal(config.isPaused, false);
   });
 
@@ -234,21 +244,23 @@ describe("clawfarm-attestation", () => {
     const requestNonce = "cfn_challenge_close_001";
     const submit = makeSubmitArgs(requestNonce);
     const receiptPda = deriveReceiptPda(requestNonce);
-    const challengePda = deriveChallengePda(
-      receiptPda,
-      challengeType,
-      challenger.publicKey
-    );
+    const challengePda = deriveChallengePda(receiptPda);
     const evidenceHash = Array.from(fillBytes(32, 7));
 
     await sendSubmitReceipt(submit);
+
+    const treasuryBalanceBefore = await provider.connection.getBalance(
+      treasury.publicKey
+    );
 
     await program.methods
       .openChallenge(challengeType, evidenceHash)
       .accounts({
         challenger: challenger.publicKey,
+        config: configPda,
         receipt: receiptPda,
         challenge: challengePda,
+        treasury: treasury.publicKey,
         systemProgram: SystemProgram.programId,
       } as any)
       .signers([challenger])
@@ -256,9 +268,20 @@ describe("clawfarm-attestation", () => {
 
     let receipt = await program.account.receipt.fetch(receiptPda);
     let challenge = await program.account.challenge.fetch(challengePda);
+    const treasuryBalanceAfter = await provider.connection.getBalance(
+      treasury.publicKey
+    );
     assert.equal(receipt.status, 1);
     assert.equal(challenge.status, 0);
     assert.ok(challenge.challenger.equals(challenger.publicKey));
+    assert.equal(
+      challenge.bondLamports.toString(),
+      challengeBondLamports.toString()
+    );
+    assert.equal(
+      treasuryBalanceAfter - treasuryBalanceBefore,
+      challengeBondLamports.toNumber()
+    );
 
     await expectAnchorError(
       program.methods
@@ -443,17 +466,10 @@ describe("clawfarm-attestation", () => {
   }
 
   function deriveChallengePda(
-    receipt: PublicKey,
-    challengeTypeValue: number,
-    challengerKey: PublicKey
+    receipt: PublicKey
   ): PublicKey {
     return PublicKey.findProgramAddressSync(
-      [
-        Buffer.from("challenge"),
-        receipt.toBuffer(),
-        Buffer.from([challengeTypeValue]),
-        challengerKey.toBuffer(),
-      ],
+      [Buffer.from("challenge"), receipt.toBuffer()],
       program.programId
     )[0];
   }

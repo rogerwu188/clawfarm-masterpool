@@ -13,21 +13,29 @@ pub fn initialize_config(
     authority: Pubkey,
     pause_authority: Pubkey,
     challenge_resolver: Pubkey,
+    treasury: Pubkey,
     challenge_window_seconds: i64,
+    challenge_bond_lamports: u64,
 ) -> Result<()> {
     require!(challenge_window_seconds > 0, ErrorCode::InvalidWindow);
+    require!(challenge_bond_lamports > 0, ErrorCode::InvalidChallengeBond);
+    require!(treasury != Pubkey::default(), ErrorCode::InvalidTreasury);
 
     let config = &mut ctx.accounts.config;
     config.authority = authority;
     config.pause_authority = pause_authority;
     config.challenge_resolver = challenge_resolver;
+    config.treasury = treasury;
     config.challenge_window_seconds = challenge_window_seconds;
+    config.challenge_bond_lamports = challenge_bond_lamports;
     config.is_paused = false;
 
     emit!(ConfigInitialized {
         authority,
         pause_authority,
         challenge_resolver,
+        treasury,
+        challenge_bond_lamports,
     });
     Ok(())
 }

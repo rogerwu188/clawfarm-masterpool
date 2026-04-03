@@ -2,7 +2,7 @@
 
 Status: Implemented
 Version: v1
-Last Updated: 2026-04-03
+Last Updated: 2026-04-04
 
 ## Scope
 
@@ -22,7 +22,7 @@ Phase 1 does not:
 
 - store the full receipt body on-chain
 - fetch data from S3, IPFS, or any off-chain endpoint
-- route funds or settle treasury balances
+- execute final provider reward or slashing settlement
 - do trustless proof verification beyond signer and digest validation
 
 ## Design Summary
@@ -110,12 +110,14 @@ Fields:
 - `authority: Pubkey`
 - `pause_authority: Pubkey`
 - `challenge_resolver: Pubkey`
+- `treasury: Pubkey`
 - `challenge_window_seconds: i64`
+- `challenge_bond_lamports: u64`
 - `is_paused: bool`
 
 Purpose:
 
-- global governance and timing configuration
+- global governance, treasury escrow, and timing configuration
 
 Notes:
 
@@ -170,7 +172,7 @@ Notes:
 
 Seed:
 
-- `["challenge", receipt.key(), challenge_type_u8, challenger.key()]`
+- `["challenge", receipt.key()]`
 
 Fields:
 
@@ -178,6 +180,7 @@ Fields:
 - `challenger: Pubkey`
 - `challenge_type: u8`
 - `evidence_hash: [u8; 32]`
+- `bond_lamports: u64`
 - `opened_at: i64`
 - `resolved_at: i64`
 - `status: u8`
@@ -185,7 +188,7 @@ Fields:
 
 Purpose:
 
-- store one challenger-specific dispute against one receipt and one challenge type
+- store one dispute slot against one receipt
 
 Notes:
 
@@ -234,12 +237,6 @@ Phase 1 accepts only `0`.
 - `0 = Open`
 - `1 = Accepted`
 - `2 = Rejected`
-- `3 = Expired`
-
-Note:
-
-- `Expired` exists in the enum space but Phase 1 does not currently implement an
-  instruction that transitions into it
 
 ### `ChallengeType`
 
@@ -273,17 +270,22 @@ pub fn initialize_config(
     authority: Pubkey,
     pause_authority: Pubkey,
     challenge_resolver: Pubkey,
+    treasury: Pubkey,
     challenge_window_seconds: i64,
+    challenge_bond_lamports: u64,
 ) -> Result<()>
 ```
 
 Checks:
 
 - `challenge_window_seconds > 0`
+- `challenge_bond_lamports > 0`
 
 Effects:
 
 - creates `Config`
+- writes `treasury`
+- writes `challenge_bond_lamports`
 - sets `is_paused = false`
 
 ## 2. `upsert_provider_signer`
@@ -439,10 +441,14 @@ Checks:
 - `challenge_type` is valid
 - receipt status is `Submitted`
 - current time is not past `challenge_deadline`
+- `config.challenge_bond_lamports > 0`
+- `treasury.key() == config.treasury`
 
 Effects:
 
-- creates `Challenge`
+- transfers `config.challenge_bond_lamports` from `challenger` to `config.treasury`
+- creates the single `Challenge` PDA for the receipt
+- stores `challenge.bond_lamports`
 - sets `challenge.status = Open`
 - sets `receipt.status = Challenged`
 
@@ -527,7 +533,7 @@ pub fn close_challenge(ctx: Context<CloseChallenge>) -> Result<()>
 Checks:
 
 - only `config.authority`
-- challenge status is `Accepted`, `Rejected`, or `Expired`
+- challenge status is `Accepted` or `Rejected`
 
 Effects:
 
@@ -589,7 +595,6 @@ Closable challenge states:
 
 - `Accepted`
 - `Rejected`
-- `Expired`
 
 ## Canonicalization Contract
 
@@ -648,6 +653,16 @@ Recommended event-driven loop:
 6. Once a receipt or challenge is terminal, let `config.authority` run the close
    instructions and remove the item from the bot's live queue.
 
+Bond escrow in the current implementation:
+
+- every open challenge transfers a fixed lamport bond into `config.treasury`
+- the bond amount is snapshotted inside `challenge.bond_lamports`
+- Phase 1 does not perform the final reward / refund / slash settlement:
+  - rejected challenge -> future provider reward / lock flow
+  - accepted challenge -> future challenger refund plus provider slash flow
+  - both paths are intentionally deferred to treasury / `master_pool`
+    integration
+
 Cold-start recovery:
 
 - replay `ReceiptSubmitted` first, then fold in `ChallengeOpened`,
@@ -664,7 +679,7 @@ Suggested live index shape:
   - `signer`
   - `challenge_deadline`
   - `receipt_status`
-  - `active_challenge_count`
+  - `has_open_challenge`
   - `next_action_at`
   - `last_event_slot`
 - `challenges_live` keyed by `challenge`
@@ -672,6 +687,7 @@ Suggested live index shape:
   - `receipt`
   - `challenger`
   - `challenge_type`
+  - `bond_lamports`
   - `challenge_status`
   - `resolution_code`
   - `opened_at`
@@ -699,10 +715,10 @@ Current allocation uses `8 + <Account>::INIT_SPACE`.
 
 Effective sizes in the current implementation:
 
-- `Config = 113 bytes`
+- `Config = 153 bytes`
 - `ProviderSigner = 26 bytes`
 - `Receipt = 97 bytes`
-- `Challenge = 123 bytes`
+- `Challenge = 131 bytes`
 
 This is the main rent reduction relative to the previous design that stored the
 full receipt body on-chain.
