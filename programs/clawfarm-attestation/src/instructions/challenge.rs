@@ -1,4 +1,7 @@
-use anchor_lang::prelude::*;
+use anchor_lang::{
+    prelude::*,
+    system_program::{self, Transfer},
+};
 
 use crate::{
     constants::{CHALLENGE_SEED, CONFIG_SEED},
@@ -16,6 +19,7 @@ pub fn open_challenge(
 ) -> Result<()> {
     let challenge_type = ChallengeType::try_from(challenge_type)?;
     let now = Clock::get()?.unix_timestamp;
+    let config = &ctx.accounts.config;
 
     let receipt = &mut ctx.accounts.receipt;
     require!(
@@ -27,11 +31,26 @@ pub fn open_challenge(
         ErrorCode::ChallengeWindowClosed
     );
 
+    let bond_lamports = config.challenge_bond_lamports;
+    require!(bond_lamports > 0, ErrorCode::InvalidChallengeBond);
+
+    system_program::transfer(
+        CpiContext::new(
+            ctx.accounts.system_program.to_account_info(),
+            Transfer {
+                from: ctx.accounts.challenger.to_account_info(),
+                to: ctx.accounts.treasury.to_account_info(),
+            },
+        ),
+        bond_lamports,
+    )?;
+
     let challenge = &mut ctx.accounts.challenge;
     challenge.receipt = receipt.key();
     challenge.challenger = ctx.accounts.challenger.key();
     challenge.challenge_type = challenge_type as u8;
     challenge.evidence_hash = evidence_hash;
+    challenge.bond_lamports = bond_lamports;
     challenge.opened_at = now;
     challenge.resolved_at = 0;
     challenge.status = ChallengeStatus::Open as u8;
@@ -44,6 +63,8 @@ pub fn open_challenge(
         receipt: receipt.key(),
         challenger: ctx.accounts.challenger.key(),
         challenge_type: challenge_type as u8,
+        treasury: config.treasury,
+        bond_lamports,
     });
     Ok(())
 }
@@ -99,8 +120,7 @@ pub fn close_challenge(ctx: Context<CloseChallenge>) -> Result<()> {
     let challenge = &ctx.accounts.challenge;
     require!(
         challenge.status == ChallengeStatus::Accepted as u8
-            || challenge.status == ChallengeStatus::Rejected as u8
-            || challenge.status == ChallengeStatus::Expired as u8,
+            || challenge.status == ChallengeStatus::Rejected as u8,
         ErrorCode::ChallengeNotClosable
     );
 
@@ -119,6 +139,11 @@ pub fn close_challenge(ctx: Context<CloseChallenge>) -> Result<()> {
 pub struct OpenChallenge<'info> {
     #[account(mut)]
     pub challenger: Signer<'info>,
+    #[account(
+        seeds = [CONFIG_SEED],
+        bump
+    )]
+    pub config: Account<'info, Config>,
     #[account(mut)]
     pub receipt: Account<'info, Receipt>,
     #[account(
@@ -127,13 +152,16 @@ pub struct OpenChallenge<'info> {
         space = 8 + Challenge::INIT_SPACE,
         seeds = [
             CHALLENGE_SEED,
-            receipt.key().as_ref(),
-            &[challenge_type],
-            challenger.key().as_ref()
+            receipt.key().as_ref()
         ],
         bump
     )]
     pub challenge: Account<'info, Challenge>,
+    #[account(
+        mut,
+        address = config.treasury
+    )]
+    pub treasury: SystemAccount<'info>,
     pub system_program: Program<'info, System>,
 }
 

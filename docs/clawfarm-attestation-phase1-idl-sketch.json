@@ -17,10 +17,10 @@
     "MAX_PROVIDER_LEN": 64,
     "MAX_MODEL_LEN": 255,
     "MAX_PROVIDER_REQUEST_ID_LEN": 255,
-    "CONFIG_ALLOCATED": 113,
+    "CONFIG_ALLOCATED": 153,
     "PROVIDER_SIGNER_ALLOCATED": 26,
     "RECEIPT_ALLOCATED": 97,
-    "CHALLENGE_ALLOCATED": 123
+    "CHALLENGE_ALLOCATED": 131
   },
   "seeds": {
     "CONFIG_SEED": "config",
@@ -59,8 +59,7 @@
     "ChallengeStatus": {
       "open": 0,
       "accepted": 1,
-      "rejected": 2,
-      "expired": 3
+      "rejected": 2
     },
     "ChallengeType": {
       "invalid_signature": 0,
@@ -79,7 +78,7 @@
   },
   "accounts": {
     "Config": {
-      "allocated": 113,
+      "allocated": 153,
       "seeds": [
         "config"
       ],
@@ -97,8 +96,16 @@
           "type": "pubkey"
         },
         {
+          "name": "treasury",
+          "type": "pubkey"
+        },
+        {
           "name": "challenge_window_seconds",
           "type": "i64"
+        },
+        {
+          "name": "challenge_bond_lamports",
+          "type": "u64"
         },
         {
           "name": "is_paused",
@@ -173,12 +180,10 @@
       ]
     },
     "Challenge": {
-      "allocated": 123,
+      "allocated": 131,
       "seeds": [
         "challenge",
-        "receipt_pubkey",
-        "challenge_type",
-        "challenger_pubkey"
+        "receipt_pubkey"
       ],
       "fields": [
         {
@@ -202,6 +207,10 @@
               32
             ]
           }
+        },
+        {
+          "name": "bond_lamports",
+          "type": "u64"
         },
         {
           "name": "opened_at",
@@ -255,8 +264,16 @@
           "type": "pubkey"
         },
         {
+          "name": "treasury",
+          "type": "pubkey"
+        },
+        {
           "name": "challenge_window_seconds",
           "type": "i64"
+        },
+        {
+          "name": "challenge_bond_lamports",
+          "type": "u64"
         }
       ]
     },
@@ -390,11 +407,18 @@
           "signer": true
         },
         {
+          "name": "config"
+        },
+        {
           "name": "receipt",
           "writable": true
         },
         {
           "name": "challenge",
+          "writable": true
+        },
+        {
+          "name": "treasury",
           "writable": true
         },
         {

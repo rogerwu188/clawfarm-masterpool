@@ -64,6 +64,10 @@ pub enum ErrorCode {
     InvalidValidityWindow,
     #[msg("Window value is invalid")]
     InvalidWindow,
+    #[msg("Challenge bond value is invalid")]
+    InvalidChallengeBond,
+    #[msg("Treasury pubkey is invalid")]
+    InvalidTreasury,
     #[msg("String exceeds the phase 1 maximum length")]
     StringTooLong,
     #[msg("Receipt hash does not match the canonical payload")]

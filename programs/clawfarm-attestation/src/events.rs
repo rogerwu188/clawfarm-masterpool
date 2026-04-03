@@ -5,6 +5,8 @@ pub struct ConfigInitialized {
     pub authority: Pubkey,
     pub pause_authority: Pubkey,
     pub challenge_resolver: Pubkey,
+    pub treasury: Pubkey,
+    pub challenge_bond_lamports: u64,
 }
 
 #[event]
@@ -57,6 +59,8 @@ pub struct ChallengeOpened {
     pub receipt: Pubkey,
     pub challenger: Pubkey,
     pub challenge_type: u8,
+    pub treasury: Pubkey,
+    pub bond_lamports: u64,
 }
 
 #[event]
