@@ -238,20 +238,45 @@ Canonicalization 逻辑见 [utils.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-m
 
 ### 建议的链下索引字段
 
-- `receipt_hash`
-- `request_nonce`
-- `provider`
-- `proof_id`
-- `signer`
-- `submitted_at`
-- `challenge_deadline`
-- `finalized_at`
-- `receipt_status`
-- `challenge_status`
-- `s3_bucket`
-- `s3_key`
-- `content_type`
-- `schema_version`
+建议维护两张按 PDA 主键组织的 live 表，而不是反复全量扫描账户：
+
+- `receipts_live`，主键为 `receipt`
+  - `receipt`
+  - `request_nonce`
+  - `receipt_hash`
+  - `provider`
+  - `proof_id`
+  - `signer`
+  - `submitted_at`
+  - `challenge_deadline`
+  - `finalized_at`
+  - `receipt_status`
+  - `active_challenge_count`
+  - `next_action_at`
+  - `last_event_slot`
+  - `s3_bucket`
+  - `s3_key`
+  - `content_type`
+  - `schema_version`
+- `challenges_live`，主键为 `challenge`
+  - `challenge`
+  - `receipt`
+  - `challenger`
+  - `challenge_type`
+  - `challenge_status`
+  - `resolution_code`
+  - `opened_at`
+  - `resolved_at`
+  - `last_event_slot`
+
+冷启动回放建议顺序：
+
+1. `ReceiptSubmitted`
+2. `ChallengeOpened`
+3. `ChallengeResolved`
+4. `ReceiptFinalized`
+5. `ReceiptClosed`
+6. `ChallengeClosed`
 
 ### 运维说明
 
@@ -267,8 +292,9 @@ Canonicalization 逻辑见 [utils.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-m
 
 推荐工作循环：
 
-1. 订阅 `ReceiptSubmitted`、`ChallengeOpened`、`ChallengeResolved` 和
-   `ReceiptClosed`，在链下维护一个以 `receipt` pubkey 为键的工作队列
+1. 订阅 `ReceiptSubmitted`、`ChallengeOpened`、`ChallengeResolved`、
+   `ReceiptFinalized` 和 `ReceiptClosed`，在链下维护一个以 `receipt`
+   pubkey 为键的工作队列
 2. 把 `ReceiptSubmitted.receipt` + `ReceiptSubmitted.challenge_deadline` 作为
    “当前开放 receipt” 的主索引，用来做监控和后续 finalize 调度
 3. 收到 `ChallengeOpened` 后，把 dispute job 绑定到该 receipt，再从链下
@@ -279,9 +305,9 @@ Canonicalization 逻辑见 [utils.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-m
    - receipt 无效时用 `Accepted` 或 `ReceiptInvalidated`
    - signer 需要连带惩罚和撤销时用 `SignerRevoked`
 6. 由机器人控制的 `challenge_resolver` 权限地址发起 `resolve_challenge`
-7. 对没有 challenge 的 receipt，在 `challenge_deadline` 到点后调用
-   `finalize_receipt`；进入终态后，再由 `config.authority` 执行
-   `close_challenge` / `close_receipt`
+7. 对没有 challenge 的 receipt，在 `challenge_deadline` 到点后由
+   `config.authority` 发起 `finalize_receipt`；进入终态后，继续由
+   `config.authority` 执行 `close_challenge` / `close_receipt`
 
 运维建议：
 
@@ -719,19 +745,22 @@ pub fn finalize_receipt(ctx: Context<FinalizeReceipt>) -> Result<()>
 
 账户：
 
+- `authority`：必须等于 `config.authority`
+- `config`：attestation 配置账户
 - `receipt`：目标 receipt 账户
 
 功能流程：
 
-1. 检查 receipt 仍然是 `Submitted`
-2. 检查 `now > challenge_deadline`
-3. 将 receipt 状态设为 `Finalized`
-4. 设置 `finalized_at = now`
-5. 发出 `ReceiptFinalized`
+1. 检查 `authority == config.authority`
+2. 检查 receipt 仍然是 `Submitted`
+3. 检查 `now > challenge_deadline`
+4. 将 receipt 状态设为 `Finalized`
+5. 设置 `finalized_at = now`
+6. 发出 `ReceiptFinalized`
 
 结果：
 
-- 未被 challenge 的 receipt 进入终态，可后续 close
+- 未被 challenge 的 receipt 在 `config.authority` 控制下进入终态，后续可 close
 
 ## 9. `close_challenge`
 

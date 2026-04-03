@@ -156,6 +156,13 @@ pub struct SubmitReceipt<'info> {
 
 #[derive(Accounts)]
 pub struct FinalizeReceipt<'info> {
+    pub authority: Signer<'info>,
+    #[account(
+        seeds = [CONFIG_SEED],
+        has_one = authority,
+        bump
+    )]
+    pub config: Account<'info, Config>,
     #[account(mut)]
     pub receipt: Account<'info, Receipt>,
 }

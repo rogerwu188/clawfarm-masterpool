@@ -249,20 +249,46 @@ contract is designed to support the following operational flow.
 
 ### Suggested off-chain index fields
 
-- `receipt_hash`
-- `request_nonce`
-- `provider`
-- `proof_id`
-- `signer`
-- `submitted_at`
-- `challenge_deadline`
-- `finalized_at`
-- `receipt_status`
-- `challenge_status`
-- `s3_bucket`
-- `s3_key`
-- `content_type`
-- `schema_version`
+Use two small live tables keyed by PDA instead of scanning the whole account
+space:
+
+- `receipts_live` keyed by `receipt`
+  - `receipt`
+  - `request_nonce`
+  - `receipt_hash`
+  - `provider`
+  - `proof_id`
+  - `signer`
+  - `submitted_at`
+  - `challenge_deadline`
+  - `finalized_at`
+  - `receipt_status`
+  - `active_challenge_count`
+  - `next_action_at`
+  - `last_event_slot`
+  - `s3_bucket`
+  - `s3_key`
+  - `content_type`
+  - `schema_version`
+- `challenges_live` keyed by `challenge`
+  - `challenge`
+  - `receipt`
+  - `challenger`
+  - `challenge_type`
+  - `challenge_status`
+  - `resolution_code`
+  - `opened_at`
+  - `resolved_at`
+  - `last_event_slot`
+
+Recommended replay order for cold start:
+
+1. `ReceiptSubmitted`
+2. `ChallengeOpened`
+3. `ChallengeResolved`
+4. `ReceiptFinalized`
+5. `ReceiptClosed`
+6. `ChallengeClosed`
 
 ### Operational notes
 
@@ -280,8 +306,9 @@ human-operated wallet.
 
 Recommended loop:
 
-1. subscribe to `ReceiptSubmitted`, `ChallengeOpened`, `ChallengeResolved`, and
-   `ReceiptClosed`; keep an off-chain queue keyed by `receipt` pubkey
+1. subscribe to `ReceiptSubmitted`, `ChallengeOpened`, `ChallengeResolved`,
+   `ReceiptFinalized`, and `ReceiptClosed`; keep an off-chain queue keyed by
+   `receipt` pubkey
 2. treat `ReceiptSubmitted.receipt` + `ReceiptSubmitted.challenge_deadline` as
    the canonical source for "open receipts" that still need monitoring or
    later finalization
@@ -295,9 +322,9 @@ Recommended loop:
    - `SignerRevoked` if the signer should be slashed and revoked
 6. submit `resolve_challenge` from the bot-controlled `challenge_resolver`
    authority
-7. for uncontested receipts, wake up at `challenge_deadline` and call
-   `finalize_receipt`; once terminal, let `config.authority` run
-   `close_challenge` and `close_receipt` as needed
+7. for uncontested receipts, wake up at `challenge_deadline` and submit
+   `finalize_receipt` from `config.authority`; once terminal, keep using
+   `config.authority` for `close_challenge` and `close_receipt` as needed
 
 Operational recommendations:
 
@@ -742,19 +769,23 @@ pub fn finalize_receipt(ctx: Context<FinalizeReceipt>) -> Result<()>
 
 Accounts:
 
+- `authority`: must equal `config.authority`
+- `config`: attestation config
 - `receipt`: target receipt account
 
 Function flow:
 
-1. checks the receipt is still `Submitted`
-2. checks `now > challenge_deadline`
-3. sets receipt status to `Finalized`
-4. sets `finalized_at = now`
-5. emits `ReceiptFinalized`
+1. checks `authority == config.authority`
+2. checks the receipt is still `Submitted`
+3. checks `now > challenge_deadline`
+4. sets receipt status to `Finalized`
+5. sets `finalized_at = now`
+6. emits `ReceiptFinalized`
 
 Result:
 
-- an uncontested receipt becomes terminal and can later be closed
+- an uncontested receipt becomes terminal under `config.authority` control and
+  can later be closed
 
 ## 9. `close_challenge`
 
