@@ -470,6 +470,11 @@ Effects:
 - marks receipt `challenged`
 - increments `challenge_count`
 
+Phase 1 implementation note:
+
+- only one active challenge is allowed per receipt at a time
+- a new challenge can only be opened while receipt status is `submitted`
+
 ## 7. `respond_challenge`
 
 Purpose:
@@ -490,7 +495,7 @@ pub fn respond_challenge(
 Checks:
 
 - challenge exists and is open
-- caller is authorized responder or governance authority
+- caller is governance-authorized in Phase 1 (`authority` or `challenge_resolver`)
 
 Effects:
 
@@ -546,7 +551,7 @@ pub fn finalize_receipt(
 Checks:
 
 - receipt exists
-- receipt status is `submitted` or `challenged`
+- receipt status is `submitted`
 - challenge window elapsed
 - no open challenge exists
 - no accepted challenge exists
@@ -573,6 +578,21 @@ The intended submit path is:
    - stores the receipt
 
 This keeps the program authoritative for replay and signature validity while keeping proof bundle retrieval fully off-chain.
+
+## Canonical Payload Drift Note
+
+There is one important upstream document drift to freeze explicitly for Phase 1 implementation:
+
+- AIRouter response schema and envelope examples include `proof_url`
+- AIRouter `AttestationPayload` type and canonical CBOR documents do not include `proof_url` in the signed payload
+
+Phase 1 implementation should follow the current AIRouter payload type and CBOR contract:
+
+- `proof_url` is validated as an instruction field
+- only `proof_url_hash = sha256(proof_url_utf8)` is stored on-chain
+- `proof_url` is not included in the canonical CBOR payload used to recompute `receipt_hash`
+
+If AIRouter later decides to sign `proof_url`, that should be treated as a payload-version change rather than a silent Phase 1 behavior change.
 
 ## Account Size Guidance
 

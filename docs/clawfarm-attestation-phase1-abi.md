@@ -464,6 +464,10 @@ Accounts:
 []                 system_program
 ```
 
+Phase 1 runtime rule:
+
+- only one active challenge is allowed per receipt at a time
+
 ## 7. `respond_challenge`
 
 Args:
@@ -483,6 +487,10 @@ Accounts:
 []                 receipt_pda
 [writable]         challenge_pda
 ```
+
+Phase 1 responder authorization:
+
+- `responder` must be `authority` or `challenge_resolver`
 
 ## 8. `resolve_challenge`
 
@@ -522,6 +530,8 @@ Accounts:
 
 Phase 1 allows any caller because finalization is a deterministic state transition.
 
+Phase 1 finalization only applies when the receipt is back in `submitted` state.
+
 ## Canonicalization Contract
 
 The on-chain canonicalization contract should be:
@@ -538,7 +548,9 @@ Fields intentionally excluded from the signed payload in Phase 1:
 - `signer`
 - `proof_url_hash`
 
-`proof_url` is included in the signed payload. The account stores only `proof_url_hash`.
+The current AIRouter payload implementation also excludes `proof_url` itself from the canonical signed payload, even though the outer attestation response schema requires `proof_url`.
+
+Phase 1 therefore treats `proof_url` as a validated transport field and stores only `proof_url_hash`.
 
 ## Validation Rules
 
