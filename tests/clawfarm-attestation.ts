@@ -74,8 +74,6 @@ describe("clawfarm-attestation", () => {
     assert.ok(config.authority.equals(authority));
     assert.ok(config.pauseAuthority.equals(pauseAuthority));
     assert.ok(config.challengeResolver.equals(challengeResolver));
-    assert.equal(config.receiptCount.toNumber(), 0);
-    assert.equal(config.challengeCount.toNumber(), 0);
     assert.equal(config.isPaused, false);
   });
 
@@ -144,12 +142,10 @@ describe("clawfarm-attestation", () => {
     await sendSubmitReceipt(submit);
 
     const receipt = await program.account.receipt.fetch(receiptPda);
-    const config = await program.account.config.fetch(configPda);
     assert.ok(receipt.signer.equals(providerSigner.publicKey));
     assert.deepEqual(receipt.receiptHash, Array.from(submit.receiptHash));
     assert.equal(receipt.status, 0);
     assert.equal(receipt.finalizedAt.toNumber(), 0);
-    assert.equal(config.receiptCount.toNumber(), 1);
   });
 
   it("finalizes and closes an unchallenged receipt", async () => {
@@ -161,10 +157,8 @@ describe("clawfarm-attestation", () => {
     await sleep(3_000);
 
     await program.methods
-      .finalizeReceipt(requestNonce)
+      .finalizeReceipt()
       .accounts({
-        caller: wallet.publicKey,
-        config: configPda,
         receipt: receiptPda,
       } as any)
       .rpc();
@@ -174,7 +168,7 @@ describe("clawfarm-attestation", () => {
     assert.isAbove(finalized.finalizedAt.toNumber(), 0);
 
     await program.methods
-      .closeReceipt(requestNonce)
+      .closeReceipt()
       .accounts({
         recipient: wallet.publicKey,
         receipt: receiptPda,
@@ -199,10 +193,9 @@ describe("clawfarm-attestation", () => {
     await sendSubmitReceipt(submit);
 
     await program.methods
-      .openChallenge(requestNonce, challengeType, evidenceHash)
+      .openChallenge(challengeType, evidenceHash)
       .accounts({
         challenger: challenger.publicKey,
-        config: configPda,
         receipt: receiptPda,
         challenge: challengePda,
         systemProgram: SystemProgram.programId,
@@ -218,12 +211,7 @@ describe("clawfarm-attestation", () => {
 
     await expectAnchorError(
       program.methods
-        .resolveChallenge(
-          requestNonce,
-          challengeType,
-          challenger.publicKey,
-          resolutionRejected
-        )
+        .resolveChallenge(resolutionRejected)
         .accounts({
           challengeResolver: outsider.publicKey,
           config: configPda,
@@ -236,12 +224,7 @@ describe("clawfarm-attestation", () => {
     );
 
     await program.methods
-      .resolveChallenge(
-        requestNonce,
-        challengeType,
-        challenger.publicKey,
-        resolutionRejected
-      )
+      .resolveChallenge(resolutionRejected)
       .accounts({
         challengeResolver,
         config: configPda,
@@ -252,25 +235,22 @@ describe("clawfarm-attestation", () => {
 
     receipt = await program.account.receipt.fetch(receiptPda);
     challenge = await program.account.challenge.fetch(challengePda);
-    const config = await program.account.config.fetch(configPda);
 
     assert.equal(receipt.status, 2);
     assert.isAbove(receipt.finalizedAt.toNumber(), 0);
     assert.equal(challenge.status, 2);
     assert.equal(challenge.resolutionCode, resolutionRejected);
-    assert.equal(config.challengeCount.toNumber(), 1);
 
     await program.methods
-      .closeChallenge(requestNonce, challengeType, challenger.publicKey)
+      .closeChallenge()
       .accounts({
         recipient: wallet.publicKey,
-        receipt: receiptPda,
         challenge: challengePda,
       } as any)
       .rpc();
 
     await program.methods
-      .closeReceipt(requestNonce)
+      .closeReceipt()
       .accounts({
         recipient: wallet.publicKey,
         receipt: receiptPda,
@@ -315,11 +295,6 @@ describe("clawfarm-attestation", () => {
     };
 
     const receiptHash = sha256(encodeCanonicalPayload(logicalPayload));
-    const ed25519Ix = Ed25519Program.createInstructionWithPrivateKey({
-      privateKey: providerSigner.secretKey,
-      message: receiptHash,
-    });
-    const signature = extractSignature(ed25519Ix.data);
 
     return {
       version: logicalPayload.version,
@@ -349,11 +324,8 @@ describe("clawfarm-attestation", () => {
         logicalPayload.latency_ms !== undefined
           ? new BN(logicalPayload.latency_ms)
           : null,
-      proofUrl:
-        "https://provider.example.com/api/public/v1/proofs/cap_test_001",
       receiptHash: Array.from(receiptHash),
       signer: providerSigner.publicKey,
-      signature: Array.from(signature),
     };
   }
 
@@ -534,12 +506,6 @@ function encodeMajorLen(major: number, value: number): Buffer {
 
 function sha256(data: Buffer): Buffer {
   return crypto.createHash("sha256").update(data).digest();
-}
-
-function extractSignature(data: Buffer | Uint8Array): Buffer {
-  const bytes = Buffer.from(data);
-  const signatureOffset = bytes.readUInt16LE(2);
-  return bytes.subarray(signatureOffset, signatureOffset + 64);
 }
 
 function fillBytes(length: number, value: number): Uint8Array {

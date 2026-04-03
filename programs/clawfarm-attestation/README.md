@@ -53,12 +53,7 @@ Fields:
 - `pause_authority`
 - `challenge_resolver`
 - `challenge_window_seconds`
-- `receipt_count`
-- `challenge_count`
 - `is_paused`
-- `phase2_enabled`
-- `bump`
-- `reserved`
 
 Purpose:
 
@@ -82,8 +77,6 @@ Fields:
 - `metadata_hash`
 - `created_at`
 - `updated_at`
-- `bump`
-- `reserved`
 
 Purpose:
 
@@ -103,7 +96,6 @@ Fields:
 - `challenge_deadline`
 - `finalized_at`
 - `status`
-- `bump`
 
 Purpose:
 
@@ -127,7 +119,6 @@ Fields:
 - `resolved_at`
 - `status`
 - `resolution_code`
-- `bump`
 
 Purpose:
 
@@ -215,13 +206,11 @@ Rules:
 
 Fields intentionally excluded from the signed payload:
 
-- `proof_url`
 - `signer`
-- `signature`
 - `receipt_hash`
 
-That means `proof_url` is validated as a transport field, but it is not stored in
-the receipt account and not part of the canonical hash in Phase 1.
+That means transport-only receipt metadata stays off-chain; the on-chain
+contract binds only the canonical digest plus the minimal lifecycle state.
 
 ## Recommended Clawfarm S3 Flow
 
@@ -330,8 +319,8 @@ on-chain and closing terminal accounts as soon as possible.
 
 ### Current account sizes
 
-- `Receipt` allocated size: `98 bytes`
-- `Challenge` allocated size: `124 bytes`
+- `Receipt` allocated size: `97 bytes`
+- `Challenge` allocated size: `123 bytes`
 
 ### Rent formula
 
@@ -343,8 +332,8 @@ minimum_balance = (account_data_len + 128) * 6,960 lamports
 
 That gives:
 
-- per `Receipt`: `(98 + 128) * 6,960 = 1,572,960 lamports = 0.00157296 SOL`
-- per `Challenge`: `(124 + 128) * 6,960 = 1,753,920 lamports = 0.00175392 SOL`
+- per `Receipt`: `(97 + 128) * 6,960 = 1,566,000 lamports = 0.001566 SOL`
+- per `Challenge`: `(123 + 128) * 6,960 = 1,746,960 lamports = 0.00174696 SOL`
 
 Important:
 
@@ -358,7 +347,7 @@ collateral is approximately:
 
 ```text
 receipt_peak_sol
-  = daily_call_count * challenge_window_days * 0.00157296
+  = daily_call_count * challenge_window_days * 0.001566
 ```
 
 If every receipt also has one live challenge at the same time, the conservative
@@ -366,7 +355,7 @@ upper bound is:
 
 ```text
 receipt_plus_challenge_peak_sol
-  = daily_call_count * challenge_window_days * 0.00332688
+  = daily_call_count * challenge_window_days * 0.00331296
 ```
 
 ### Receipt-only peak collateral
@@ -375,9 +364,9 @@ Assuming each call creates one `Receipt` and receipts are closed after the windo
 
 | Daily Calls | 1 Day Window | 3 Day Window | 7 Day Window |
 |---|---:|---:|---:|
-| 1,000 | 1.57296 SOL | 4.71888 SOL | 11.01072 SOL |
-| 10,000 | 15.7296 SOL | 47.1888 SOL | 110.1072 SOL |
-| 100,000 | 157.296 SOL | 471.888 SOL | 1101.072 SOL |
+| 1,000 | 1.566 SOL | 4.698 SOL | 10.962 SOL |
+| 10,000 | 15.66 SOL | 46.98 SOL | 109.62 SOL |
+| 100,000 | 156.6 SOL | 469.8 SOL | 1096.2 SOL |
 
 ### Conservative upper bound with one live challenge per receipt
 
@@ -385,9 +374,9 @@ Assuming every receipt also has one `Challenge` account alive at the same time:
 
 | Daily Calls | 1 Day Window | 3 Day Window | 7 Day Window |
 |---|---:|---:|---:|
-| 1,000 | 3.32688 SOL | 9.98064 SOL | 23.28816 SOL |
-| 10,000 | 33.2688 SOL | 99.8064 SOL | 232.8816 SOL |
-| 100,000 | 332.688 SOL | 998.064 SOL | 2328.816 SOL |
+| 1,000 | 3.31296 SOL | 9.93888 SOL | 23.19072 SOL |
+| 10,000 | 33.1296 SOL | 99.3888 SOL | 231.9072 SOL |
+| 100,000 | 331.296 SOL | 993.888 SOL | 2319.072 SOL |
 
 ### Practical reading
 
@@ -436,11 +425,8 @@ Function flow:
 1. checks the challenge window value is positive
 2. initializes the config PDA
 3. writes all governance addresses and timing values
-4. zeroes `receipt_count` and `challenge_count`
-5. sets `is_paused = false`
-6. sets `phase2_enabled = false`
-7. records the PDA bump
-8. emits `ConfigInitialized`
+4. sets `is_paused = false`
+5. emits `ConfigInitialized`
 
 Result:
 
@@ -495,7 +481,7 @@ Function flow:
 6. preserves `created_at` if the account already exists
 7. overwrites signer registry fields with new values
 8. sets `status = Active`
-9. updates timestamps and bump
+9. updates timestamps
 10. emits `ProviderSignerUpserted`
 
 Result:
@@ -581,7 +567,7 @@ Result:
 
 Implementation:
 
-- [receipt.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/programs/clawfarm-attestation/src/instructions/receipt.rs#L16)
+- [receipt.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/programs/clawfarm-attestation/src/instructions/receipt.rs)
 
 Signature:
 
@@ -592,7 +578,7 @@ pub fn submit_receipt(ctx: Context<SubmitReceipt>, args: SubmitReceiptArgs) -> R
 Accounts:
 
 - `payer`: signer, pays rent for `Receipt`
-- `config`: config PDA, mutable because `receipt_count` increments
+- `config`: config PDA, read-only governance config
 - `provider_signer`: signer registry PDA
 - `receipt`: receipt PDA derived from `request_nonce`
 - `instructions_sysvar`: Solana instruction sysvar, used for `ed25519` introspection
@@ -620,10 +606,8 @@ pub struct SubmitReceiptArgs {
     pub expires_at: Option<i64>,
     pub http_status: Option<u16>,
     pub latency_ms: Option<u64>,
-    pub proof_url: String,
     pub receipt_hash: [u8; 32],
     pub signer: Pubkey,
-    pub signature: [u8; 64],
 }
 ```
 
@@ -647,10 +631,8 @@ Parameter meaning:
 - `expires_at`: optional expiry time
 - `http_status`: optional HTTP status
 - `latency_ms`: optional request latency
-- `proof_url`: validated transport field, not stored in `Receipt`
 - `receipt_hash`: canonical receipt digest
-- `signer`: signer public key
-- `signature`: signer signature over `receipt_hash`
+- `signer`: signer public key whose matching `ed25519` verification must precede the instruction
 
 Function flow:
 
@@ -659,12 +641,10 @@ Function flow:
 3. loads and validates the provider signer registry entry
 4. rebuilds canonical CBOR on-chain
 5. hashes the canonical payload and requires it to match `receipt_hash`
-6. inspects the previous transaction instruction and requires a matching
-   `ed25519` verification
+6. inspects the previous transaction instruction and requires a matching `ed25519` verification for `signer` and `receipt_hash`
 7. creates the `Receipt` PDA
-8. stores only `receipt_hash`, `signer`, timestamps, status, and bump
-9. increments `config.receipt_count`
-10. emits `ReceiptSubmitted`
+8. stores only `receipt_hash`, `signer`, timestamps, and status
+9. emits `ReceiptSubmitted`
 
 Result:
 
@@ -675,14 +655,13 @@ Result:
 
 Implementation:
 
-- [challenge.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/programs/clawfarm-attestation/src/instructions/challenge.rs#L13)
+- [challenge.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/programs/clawfarm-attestation/src/instructions/challenge.rs)
 
 Signature:
 
 ```rust
 pub fn open_challenge(
     ctx: Context<OpenChallenge>,
-    request_nonce: String,
     challenge_type: u8,
     evidence_hash: [u8; 32],
 ) -> Result<()>
@@ -691,28 +670,24 @@ pub fn open_challenge(
 Accounts:
 
 - `challenger`: signer, pays rent for `Challenge`
-- `config`: config PDA, mutable because `challenge_count` increments
-- `receipt`: target receipt PDA
+- `receipt`: target receipt account
 - `challenge`: challenge PDA for `(receipt, challenge_type, challenger)`
 - `system_program`
 
 Input parameters:
 
-- `request_nonce`: used to derive the receipt PDA
 - `challenge_type`: challenge category
 - `evidence_hash`: hash of off-chain challenge evidence
 
 Function flow:
 
-1. validates `request_nonce`
-2. validates `challenge_type`
-3. checks the receipt is still `Submitted`
-4. checks current time is within the challenge window
-5. creates the `Challenge` PDA
-6. stores challenger, evidence hash, timestamps, and status
-7. sets the receipt status to `Challenged`
-8. increments `config.challenge_count`
-9. emits `ChallengeOpened`
+1. validates `challenge_type`
+2. checks the receipt is still `Submitted`
+3. checks current time is within the challenge window
+4. creates the `Challenge` PDA
+5. stores challenger, evidence hash, timestamps, and status
+6. sets the receipt status to `Challenged`
+7. emits `ChallengeOpened`
 
 Result:
 
@@ -723,48 +698,37 @@ Result:
 
 Implementation:
 
-- [challenge.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/programs/clawfarm-attestation/src/instructions/challenge.rs#L55)
+- [challenge.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/programs/clawfarm-attestation/src/instructions/challenge.rs)
 
 Signature:
 
 ```rust
-pub fn resolve_challenge(
-    ctx: Context<ResolveChallenge>,
-    request_nonce: String,
-    challenge_type: u8,
-    challenger: Pubkey,
-    resolution_code: u8,
-) -> Result<()>
+pub fn resolve_challenge(ctx: Context<ResolveChallenge>, resolution_code: u8) -> Result<()>
 ```
 
 Accounts:
 
 - `challenge_resolver`: signer, must equal `config.challenge_resolver`
 - `config`: config PDA
-- `receipt`: referenced receipt PDA
-- `challenge`: target challenge PDA
+- `receipt`: referenced receipt account
+- `challenge`: target challenge account; must point at `receipt`
 
 Input parameters:
 
-- `request_nonce`: used to derive the receipt PDA
-- `challenge_type`: target challenge type
-- `challenger`: original challenger
 - `resolution_code`: final resolution
 
 Function flow:
 
-1. validates `request_nonce`
-2. validates `challenge_type`
-3. validates `resolution_code` and rejects `None`
-4. checks the challenge matches challenger and type
-5. checks the challenge is `Open`
-6. writes `resolution_code` and `resolved_at`
-7. updates the receipt to a terminal state:
+1. validates `resolution_code` and rejects `None`
+2. checks the challenge is `Open`
+3. checks `challenge.receipt == receipt.key()`
+4. writes `resolution_code` and `resolved_at`
+5. updates the receipt to a terminal state:
    - `Accepted` or `ReceiptInvalidated` -> `Rejected`
    - `SignerRevoked` -> `Slashed`
    - `Rejected` -> `Finalized`
-8. sets `receipt.finalized_at = now`
-9. emits `ChallengeResolved`
+6. sets `receipt.finalized_at = now`
+7. emits `ChallengeResolved`
 
 Result:
 
@@ -774,32 +738,25 @@ Result:
 
 Implementation:
 
-- [receipt.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/programs/clawfarm-attestation/src/instructions/receipt.rs#L84)
+- [receipt.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/programs/clawfarm-attestation/src/instructions/receipt.rs)
 
 Signature:
 
 ```rust
-pub fn finalize_receipt(ctx: Context<FinalizeReceipt>, request_nonce: String) -> Result<()>
+pub fn finalize_receipt(ctx: Context<FinalizeReceipt>) -> Result<()>
 ```
 
 Accounts:
 
-- `caller`: any signer
-- `config`: config PDA
-- `receipt`: target receipt PDA
-
-Input parameters:
-
-- `request_nonce`: used to derive the receipt PDA
+- `receipt`: target receipt account
 
 Function flow:
 
-1. validates `request_nonce`
-2. checks the receipt is still `Submitted`
-3. checks `now > challenge_deadline`
-4. sets receipt status to `Finalized`
-5. sets `finalized_at = now`
-6. emits `ReceiptFinalized`
+1. checks the receipt is still `Submitted`
+2. checks `now > challenge_deadline`
+3. sets receipt status to `Finalized`
+4. sets `finalized_at = now`
+5. emits `ReceiptFinalized`
 
 Result:
 
@@ -809,41 +766,27 @@ Result:
 
 Implementation:
 
-- [challenge.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/programs/clawfarm-attestation/src/instructions/challenge.rs#L117)
+- [challenge.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/programs/clawfarm-attestation/src/instructions/challenge.rs)
 
 Signature:
 
 ```rust
-pub fn close_challenge(
-    ctx: Context<CloseChallenge>,
-    request_nonce: String,
-    challenge_type: u8,
-    challenger: Pubkey,
-) -> Result<()>
+pub fn close_challenge(ctx: Context<CloseChallenge>) -> Result<()>
 ```
 
 Accounts:
 
 - `recipient`: signer, receives reclaimed lamports
-- `receipt`: receipt PDA used in the challenge seed
-- `challenge`: challenge PDA to close
-
-Input parameters:
-
-- `request_nonce`: used to derive the receipt PDA
-- `challenge_type`: target challenge type
-- `challenger`: original challenger
+- `challenge`: terminal challenge account
 
 Function flow:
 
-1. validates `request_nonce`
-2. validates `challenge_type`
-3. checks challenge status is terminal:
+1. checks challenge status is terminal:
    - `Accepted`
    - `Rejected`
    - `Expired`
-4. emits `ChallengeClosed`
-5. closes the challenge account through Anchor `close = recipient`
+2. emits `ChallengeClosed`
+3. closes the challenge account through Anchor `close = recipient`
 
 Result:
 
@@ -853,32 +796,27 @@ Result:
 
 Implementation:
 
-- [receipt.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/programs/clawfarm-attestation/src/instructions/receipt.rs#L109)
+- [receipt.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/programs/clawfarm-attestation/src/instructions/receipt.rs)
 
 Signature:
 
 ```rust
-pub fn close_receipt(ctx: Context<CloseReceipt>, request_nonce: String) -> Result<()>
+pub fn close_receipt(ctx: Context<CloseReceipt>) -> Result<()>
 ```
 
 Accounts:
 
 - `recipient`: signer, receives reclaimed lamports
-- `receipt`: terminal receipt PDA
-
-Input parameters:
-
-- `request_nonce`: used to derive the receipt PDA
+- `receipt`: terminal receipt account
 
 Function flow:
 
-1. validates `request_nonce`
-2. checks receipt status is terminal:
+1. checks receipt status is terminal:
    - `Finalized`
    - `Rejected`
    - `Slashed`
-3. emits `ReceiptClosed`
-4. closes the receipt account through Anchor `close = recipient`
+2. emits `ReceiptClosed`
+3. closes the receipt account through Anchor `close = recipient`
 
 Result:
 

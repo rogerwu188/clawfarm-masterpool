@@ -1,22 +1,19 @@
 use anchor_lang::prelude::*;
 
 use crate::{
-    constants::{CHALLENGE_SEED, CONFIG_SEED, RECEIPT_SEED},
+    constants::{CHALLENGE_SEED, CONFIG_SEED},
     error::ErrorCode,
     events::{ChallengeClosed, ChallengeOpened, ChallengeResolved},
     state::{
         Challenge, ChallengeStatus, ChallengeType, Config, Receipt, ReceiptStatus, ResolutionCode,
     },
-    utils::{request_nonce_seed, validate_request_nonce},
 };
 
 pub fn open_challenge(
     ctx: Context<OpenChallenge>,
-    request_nonce: String,
     challenge_type: u8,
     evidence_hash: [u8; 32],
 ) -> Result<()> {
-    validate_request_nonce(&request_nonce)?;
     let challenge_type = ChallengeType::try_from(challenge_type)?;
     let now = Clock::get()?.unix_timestamp;
 
@@ -39,28 +36,19 @@ pub fn open_challenge(
     challenge.resolved_at = 0;
     challenge.status = ChallengeStatus::Open as u8;
     challenge.resolution_code = ResolutionCode::None as u8;
-    challenge.bump = ctx.bumps.challenge;
 
     receipt.status = ReceiptStatus::Challenged as u8;
-    ctx.accounts.config.challenge_count = ctx.accounts.config.challenge_count.saturating_add(1);
 
     emit!(ChallengeOpened {
-        request_nonce,
+        challenge: challenge.key(),
+        receipt: receipt.key(),
         challenger: ctx.accounts.challenger.key(),
         challenge_type: challenge_type as u8,
     });
     Ok(())
 }
 
-pub fn resolve_challenge(
-    ctx: Context<ResolveChallenge>,
-    request_nonce: String,
-    challenge_type: u8,
-    challenger: Pubkey,
-    resolution_code: u8,
-) -> Result<()> {
-    validate_request_nonce(&request_nonce)?;
-    let challenge_type = ChallengeType::try_from(challenge_type)?;
+pub fn resolve_challenge(ctx: Context<ResolveChallenge>, resolution_code: u8) -> Result<()> {
     let resolution_code = ResolutionCode::try_from(resolution_code)?;
     require!(
         resolution_code != ResolutionCode::None,
@@ -68,14 +56,6 @@ pub fn resolve_challenge(
     );
 
     let challenge = &mut ctx.accounts.challenge;
-    require!(
-        challenge.challenger == challenger,
-        ErrorCode::ChallengeChallengerMismatch
-    );
-    require!(
-        challenge.challenge_type == challenge_type as u8,
-        ErrorCode::ChallengeTypeMismatch
-    );
     require!(
         challenge.status == ChallengeStatus::Open as u8,
         ErrorCode::ChallengeNotResolvable
@@ -106,22 +86,16 @@ pub fn resolve_challenge(
     }
 
     emit!(ChallengeResolved {
-        request_nonce,
-        challenger,
-        challenge_type: challenge_type as u8,
+        challenge: challenge.key(),
+        receipt: receipt.key(),
+        challenger: challenge.challenger,
+        challenge_type: challenge.challenge_type,
         resolution_code: resolution_code as u8,
     });
     Ok(())
 }
 
-pub fn close_challenge(
-    ctx: Context<CloseChallenge>,
-    request_nonce: String,
-    challenge_type: u8,
-    challenger: Pubkey,
-) -> Result<()> {
-    validate_request_nonce(&request_nonce)?;
-    let challenge_type = ChallengeType::try_from(challenge_type)?;
+pub fn close_challenge(ctx: Context<CloseChallenge>) -> Result<()> {
     let challenge = &ctx.accounts.challenge;
     require!(
         challenge.status == ChallengeStatus::Accepted as u8
@@ -133,29 +107,19 @@ pub fn close_challenge(
     emit!(ChallengeClosed {
         challenge: challenge.key(),
         receipt: challenge.receipt,
-        challenger,
-        challenge_type: challenge_type as u8,
+        challenger: challenge.challenger,
+        challenge_type: challenge.challenge_type,
         resolution_code: challenge.resolution_code,
     });
     Ok(())
 }
 
 #[derive(Accounts)]
-#[instruction(request_nonce: String, challenge_type: u8, evidence_hash: [u8; 32])]
+#[instruction(challenge_type: u8)]
 pub struct OpenChallenge<'info> {
     #[account(mut)]
     pub challenger: Signer<'info>,
-    #[account(
-        mut,
-        seeds = [CONFIG_SEED],
-        bump = config.bump
-    )]
-    pub config: Account<'info, Config>,
-    #[account(
-        mut,
-        seeds = [RECEIPT_SEED, &request_nonce_seed(request_nonce.as_str())],
-        bump = receipt.bump
-    )]
+    #[account(mut)]
     pub receipt: Account<'info, Receipt>,
     #[account(
         init,
@@ -174,59 +138,29 @@ pub struct OpenChallenge<'info> {
 }
 
 #[derive(Accounts)]
-#[instruction(
-    request_nonce: String,
-    challenge_type: u8,
-    challenger: Pubkey,
-    resolution_code: u8
-)]
 pub struct ResolveChallenge<'info> {
     pub challenge_resolver: Signer<'info>,
     #[account(
         seeds = [CONFIG_SEED],
-        bump = config.bump,
+        bump,
         has_one = challenge_resolver
     )]
     pub config: Account<'info, Config>,
-    #[account(
-        mut,
-        seeds = [RECEIPT_SEED, &request_nonce_seed(request_nonce.as_str())],
-        bump = receipt.bump
-    )]
+    #[account(mut)]
     pub receipt: Account<'info, Receipt>,
     #[account(
         mut,
-        seeds = [
-            CHALLENGE_SEED,
-            receipt.key().as_ref(),
-            &[challenge_type],
-            challenger.as_ref()
-        ],
-        bump = challenge.bump
+        has_one = receipt @ ErrorCode::ReceiptNonceMismatch
     )]
     pub challenge: Account<'info, Challenge>,
 }
 
 #[derive(Accounts)]
-#[instruction(request_nonce: String, challenge_type: u8, challenger: Pubkey)]
 pub struct CloseChallenge<'info> {
     #[account(mut)]
     pub recipient: Signer<'info>,
     #[account(
         mut,
-        seeds = [RECEIPT_SEED, &request_nonce_seed(request_nonce.as_str())],
-        bump = receipt.bump
-    )]
-    pub receipt: Account<'info, Receipt>,
-    #[account(
-        mut,
-        seeds = [
-            CHALLENGE_SEED,
-            receipt.key().as_ref(),
-            &[challenge_type],
-            challenger.as_ref()
-        ],
-        bump = challenge.bump,
         close = recipient
     )]
     pub challenge: Account<'info, Challenge>,

@@ -18,11 +18,10 @@
     "MAX_MODEL_LEN": 255,
     "MAX_KEY_ID_LEN": 128,
     "MAX_PROVIDER_REQUEST_ID_LEN": 255,
-    "MAX_PROOF_URL_LEN": 512,
-    "CONFIG_ALLOCATED": 163,
-    "PROVIDER_SIGNER_ALLOCATED": 339,
-    "RECEIPT_ALLOCATED": 98,
-    "CHALLENGE_ALLOCATED": 124
+    "CONFIG_ALLOCATED": 113,
+    "PROVIDER_SIGNER_ALLOCATED": 306,
+    "RECEIPT_ALLOCATED": 97,
+    "CHALLENGE_ALLOCATED": 123
   },
   "seeds": {
     "CONFIG_SEED": "config",
@@ -81,7 +80,7 @@
   },
   "accounts": {
     "Config": {
-      "allocated": 163,
+      "allocated": 113,
       "seeds": [
         "config"
       ],
@@ -103,38 +102,13 @@
           "type": "i64"
         },
         {
-          "name": "receipt_count",
-          "type": "u64"
-        },
-        {
-          "name": "challenge_count",
-          "type": "u64"
-        },
-        {
           "name": "is_paused",
           "type": "bool"
-        },
-        {
-          "name": "phase2_enabled",
-          "type": "bool"
-        },
-        {
-          "name": "bump",
-          "type": "u8"
-        },
-        {
-          "name": "reserved",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
         }
       ]
     },
     "ProviderSigner": {
-      "allocated": 339,
+      "allocated": 306,
       "seeds": [
         "provider_signer",
         "provider_code_hash",
@@ -188,24 +162,11 @@
         {
           "name": "updated_at",
           "type": "i64"
-        },
-        {
-          "name": "bump",
-          "type": "u8"
-        },
-        {
-          "name": "reserved",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
         }
       ]
     },
     "Receipt": {
-      "allocated": 98,
+      "allocated": 97,
       "seeds": [
         "receipt",
         "request_nonce_hash"
@@ -240,15 +201,11 @@
           "name": "status",
           "type": "u8",
           "enum": "ReceiptStatus"
-        },
-        {
-          "name": "bump",
-          "type": "u8"
         }
       ]
     },
     "Challenge": {
-      "allocated": 124,
+      "allocated": 123,
       "seeds": [
         "challenge",
         "receipt_pubkey",
@@ -295,10 +252,6 @@
           "name": "resolution_code",
           "type": "u8",
           "enum": "ResolutionCode"
-        },
-        {
-          "name": "bump",
-          "type": "u8"
         }
       ]
     }
@@ -484,10 +437,6 @@
           "signer": true
         },
         {
-          "name": "config",
-          "writable": true
-        },
-        {
           "name": "receipt",
           "writable": true
         },
@@ -500,11 +449,6 @@
         }
       ],
       "args": [
-        {
-          "name": "request_nonce",
-          "type": "string",
-          "max_len": 128
-        },
         {
           "name": "challenge_type",
           "type": "u8"
@@ -541,19 +485,6 @@
       ],
       "args": [
         {
-          "name": "request_nonce",
-          "type": "string",
-          "max_len": 128
-        },
-        {
-          "name": "challenge_type",
-          "type": "u8"
-        },
-        {
-          "name": "challenger",
-          "type": "pubkey"
-        },
-        {
           "name": "resolution_code",
           "type": "u8"
         }
@@ -563,24 +494,11 @@
       "name": "finalize_receipt",
       "accounts": [
         {
-          "name": "caller",
-          "signer": true
-        },
-        {
-          "name": "config"
-        },
-        {
           "name": "receipt",
           "writable": true
         }
       ],
-      "args": [
-        {
-          "name": "request_nonce",
-          "type": "string",
-          "max_len": 128
-        }
-      ]
+      "args": []
     },
     {
       "name": "close_challenge",
@@ -591,29 +509,11 @@
           "signer": true
         },
         {
-          "name": "receipt",
-          "writable": true
-        },
-        {
           "name": "challenge",
           "writable": true
         }
       ],
-      "args": [
-        {
-          "name": "request_nonce",
-          "type": "string",
-          "max_len": 128
-        },
-        {
-          "name": "challenge_type",
-          "type": "u8"
-        },
-        {
-          "name": "challenger",
-          "type": "pubkey"
-        }
-      ]
+      "args": []
     },
     {
       "name": "close_receipt",
@@ -628,13 +528,7 @@
           "writable": true
         }
       ],
-      "args": [
-        {
-          "name": "request_nonce",
-          "type": "string",
-          "max_len": 128
-        }
-      ]
+      "args": []
     }
   ],
   "types": {
@@ -731,11 +625,6 @@
           }
         },
         {
-          "name": "proof_url",
-          "type": "string",
-          "max_len": 512
-        },
-        {
           "name": "receipt_hash",
           "type": {
             "array": [
@@ -747,15 +636,6 @@
         {
           "name": "signer",
           "type": "pubkey"
-        },
-        {
-          "name": "signature",
-          "type": {
-            "array": [
-              "u8",
-              64
-            ]
-          }
         }
       ]
     }

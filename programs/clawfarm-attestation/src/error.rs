@@ -42,7 +42,7 @@ pub enum ErrorCode {
     ChallengeWindowClosed,
     #[msg("Receipt is not challengeable")]
     ReceiptNotChallengeable,
-    #[msg("Receipt nonce does not match the receipt account")]
+    #[msg("Challenge receipt does not match the supplied receipt account")]
     ReceiptNonceMismatch,
     #[msg("Challenge cannot be resolved in its current state")]
     ChallengeNotResolvable,
@@ -66,8 +66,6 @@ pub enum ErrorCode {
     InvalidWindow,
     #[msg("String exceeds the phase 1 maximum length")]
     StringTooLong,
-    #[msg("Proof URL is invalid")]
-    InvalidProofUrl,
     #[msg("Receipt hash does not match the canonical payload")]
     ReceiptHashMismatch,
     #[msg("Matching ed25519 verification instruction is missing")]

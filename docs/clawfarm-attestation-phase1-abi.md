@@ -35,7 +35,6 @@ MAX_PROVIDER_LEN             = 64
 MAX_MODEL_LEN                = 255
 MAX_KEY_ID_LEN               = 128
 MAX_PROVIDER_REQUEST_ID_LEN  = 255
-MAX_PROOF_URL_LEN            = 512
 ```
 
 ## PDA Seeds
@@ -142,19 +141,14 @@ authority: Pubkey
 pause_authority: Pubkey
 challenge_resolver: Pubkey
 challenge_window_seconds: i64
-receipt_count: u64
-challenge_count: u64
 is_paused: bool
-phase2_enabled: bool
-bump: u8
-reserved: [u8; 32]
 ```
 
 Account size:
 
 ```text
-INIT_SPACE = 155
-ALLOCATED  = 163
+INIT_SPACE = 105
+ALLOCATED  = 113
 ```
 
 ## `ProviderSigner`
@@ -172,15 +166,13 @@ valid_until: i64
 metadata_hash: [u8; 32]
 created_at: i64
 updated_at: i64
-bump: u8
-reserved: [u8; 32]
 ```
 
 Account size:
 
 ```text
-INIT_SPACE = 331
-ALLOCATED  = 339
+INIT_SPACE = 298
+ALLOCATED  = 306
 ```
 
 ## `Receipt`
@@ -194,21 +186,19 @@ submitted_at: i64
 challenge_deadline: i64
 finalized_at: i64
 status: u8
-bump: u8
 ```
 
 Account size:
 
 ```text
-INIT_SPACE = 90
-ALLOCATED  = 98
+INIT_SPACE = 89
+ALLOCATED  = 97
 ```
 
 Notes:
 
 - this is the Phase 1 `ReceiptLite` shape
-- `request_nonce`, `proof_id`, `provider`, `model`, token counts, and `proof_url`
-  are not stored in the account
+- `request_nonce`, `proof_id`, `provider`, and detailed usage metadata are not stored in the account
 
 ## `Challenge`
 
@@ -223,14 +213,13 @@ opened_at: i64
 resolved_at: i64
 status: u8
 resolution_code: u8
-bump: u8
 ```
 
 Account size:
 
 ```text
-INIT_SPACE = 116
-ALLOCATED  = 124
+INIT_SPACE = 115
+ALLOCATED  = 123
 ```
 
 ## Instruction ABI
@@ -337,10 +326,8 @@ SubmitReceiptArgs {
   expires_at: Option<i64>,
   http_status: Option<u16>,
   latency_ms: Option<u64>,
-  proof_url: String,
   receipt_hash: [u8; 32],
   signer: Pubkey,
-  signature: [u8; 64],
 }
 ```
 
@@ -348,7 +335,7 @@ Accounts:
 
 ```text
 [writable, signer] payer
-[writable]         config
+[]                 config
 []                 provider_signer
 [writable]         receipt
 []                 instructions_sysvar
@@ -358,14 +345,13 @@ Accounts:
 Runtime expectation:
 
 - the immediately preceding instruction must be the matching `ed25519_program`
-  verify instruction
+  verify instruction for `signer` and `receipt_hash`
 
 ## 6. `open_challenge`
 
 Args:
 
 ```rust
-request_nonce: String
 challenge_type: u8
 evidence_hash: [u8; 32]
 ```
@@ -374,7 +360,6 @@ Accounts:
 
 ```text
 [writable, signer] challenger
-[writable]         config
 [writable]         receipt
 [writable]         challenge
 []                 system_program
@@ -389,9 +374,6 @@ Runtime rule:
 Args:
 
 ```rust
-request_nonce: String
-challenge_type: u8
-challenger: Pubkey
 resolution_code: u8
 ```
 
@@ -404,9 +386,10 @@ Accounts:
 [writable]         challenge
 ```
 
-Runtime rule:
+Runtime rules:
 
 - `config` must `has_one = challenge_resolver`
+- `challenge.receipt` must equal `receipt.key()`
 
 Terminal result mapping:
 
@@ -421,37 +404,31 @@ rejected                       -> receipt.finalized
 Args:
 
 ```rust
-request_nonce: String
+(none)
 ```
 
 Accounts:
 
 ```text
-[signer]           caller
-[]                 config
 [writable]         receipt
 ```
 
 Runtime rule:
 
-- any caller may finalize once the challenge window is over and the receipt is
-  still `submitted`
+- receipt must still be `submitted` and the challenge window must be over
 
 ## 9. `close_challenge`
 
 Args:
 
 ```rust
-request_nonce: String
-challenge_type: u8
-challenger: Pubkey
+(none)
 ```
 
 Accounts:
 
 ```text
 [writable, signer] recipient
-[writable]         receipt
 [writable]         challenge
 ```
 
@@ -464,7 +441,7 @@ Runtime rule:
 Args:
 
 ```rust
-request_nonce: String
+(none)
 ```
 
 Accounts:
@@ -490,9 +467,7 @@ The current canonicalization contract is:
 
 Fields intentionally excluded from the signed payload:
 
-- `proof_url`
 - `signer`
-- `signature`
 - `receipt_hash`
 
 ## Validation Rules

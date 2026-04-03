@@ -9,7 +9,7 @@ use solana_sha256_hasher::hash;
 
 use crate::{
     constants::{
-        MAX_KEY_ID_LEN, MAX_MODEL_LEN, MAX_PROOF_ID_LEN, MAX_PROOF_URL_LEN, MAX_PROVIDER_LEN,
+        MAX_KEY_ID_LEN, MAX_MODEL_LEN, MAX_PROOF_ID_LEN, MAX_PROVIDER_LEN,
         MAX_PROVIDER_REQUEST_ID_LEN, MAX_REQUEST_NONCE_LEN,
     },
     error::ErrorCode,
@@ -35,7 +35,6 @@ pub(crate) fn validate_submit_receipt_args(args: &SubmitReceiptArgs) -> Result<(
     validate_request_nonce(&args.request_nonce)?;
     validate_provider_code(&args.provider)?;
     validate_model(&args.model)?;
-    validate_proof_url(&args.proof_url)?;
     require!(
         attester_type_label(args.attester_type).is_some(),
         ErrorCode::InvalidAttesterType
@@ -113,18 +112,6 @@ pub(crate) fn validate_key_id(value: &str) -> Result<()> {
     require!(
         !value.is_empty() && value.len() <= MAX_KEY_ID_LEN,
         ErrorCode::StringTooLong
-    );
-    Ok(())
-}
-
-pub(crate) fn validate_proof_url(value: &str) -> Result<()> {
-    require!(
-        !value.is_empty() && value.len() <= MAX_PROOF_URL_LEN,
-        ErrorCode::InvalidProofUrl
-    );
-    require!(
-        value.starts_with("https://") || value.starts_with("http://"),
-        ErrorCode::InvalidProofUrl
     );
     Ok(())
 }
@@ -253,7 +240,6 @@ pub(crate) fn build_phase1_canonical_cbor(args: &SubmitReceiptArgs) -> Result<Ve
 pub(crate) fn verify_preceding_ed25519_instruction(
     instructions_sysvar: &AccountInfo<'_>,
     signer: &Pubkey,
-    signature: &[u8; 64],
     message: &[u8; 32],
 ) -> Result<()> {
     let current_index = load_current_index_checked(instructions_sysvar)
@@ -275,7 +261,7 @@ pub(crate) fn verify_preceding_ed25519_instruction(
     require!(data.len() >= 16, ErrorCode::Ed25519InstructionMismatch);
     require!(data[0] == 1, ErrorCode::Ed25519InstructionMismatch);
 
-    let signature_offset = read_u16_le(data, 2)? as usize;
+    let _signature_offset = read_u16_le(data, 2)? as usize;
     let signature_instruction_index = read_u16_le(data, 4)?;
     let public_key_offset = read_u16_le(data, 6)? as usize;
     let public_key_instruction_index = read_u16_le(data, 8)?;
@@ -295,15 +281,10 @@ pub(crate) fn verify_preceding_ed25519_instruction(
     );
 
     let public_key_bytes = read_slice(data, public_key_offset, 32)?;
-    let signature_bytes = read_slice(data, signature_offset, 64)?;
     let message_bytes = read_slice(data, message_data_offset, message_data_size)?;
 
     require!(
         public_key_bytes == signer.as_ref(),
-        ErrorCode::Ed25519InstructionMismatch
-    );
-    require!(
-        signature_bytes == signature.as_slice(),
         ErrorCode::Ed25519InstructionMismatch
     );
     require!(
