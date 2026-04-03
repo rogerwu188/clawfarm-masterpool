@@ -1,8 +1,8 @@
 #![allow(unexpected_cfgs)]
 
 use anchor_lang::prelude::*;
-use anchor_spl::token::{self, Mint, MintTo, SetAuthority, Token, TokenAccount};
 use anchor_spl::token::spl_token::instruction::AuthorityType;
+use anchor_spl::token::{self, Mint, MintTo, SetAuthority, Token, TokenAccount};
 
 declare_id!("3sk574EAo5fhTCaj9hyDou4pgLBV7TgTSWZPyNeA8TLM");
 
@@ -14,9 +14,9 @@ pub const POOL_AUTHORITY_SEED: &[u8] = b"pool_authority";
 pub const SETTLEMENT_SEED: &[u8] = b"settlement";
 
 /// Fixed protocol parameters
-pub const COMPUTE_POOL_BPS: u16 = 5000;    // 50%
-pub const OUTCOME_POOL_BPS: u16 = 5000;    // 50%
-pub const TREASURY_TAX_BPS: u16 = 300;     // 3%
+pub const COMPUTE_POOL_BPS: u16 = 5000; // 50%
+pub const OUTCOME_POOL_BPS: u16 = 5000; // 50%
+pub const TREASURY_TAX_BPS: u16 = 300; // 3%
 pub const GENESIS_TOTAL_SUPPLY: u64 = 1_000_000_000_000_000; // 1B with 6 decimals
 pub const CLAW_DECIMALS: u8 = 6;
 
@@ -37,7 +37,7 @@ pub mod clawfarm_masterpool {
         config.is_initialized = true;
         config.claw_mint = ctx.accounts.claw_mint.key();
         config.master_pool_vault = Pubkey::default(); // set in create_master_pool_vault
-        config.treasury_vault = Pubkey::default();    // set in create_treasury_vault
+        config.treasury_vault = Pubkey::default(); // set in create_treasury_vault
         config.compute_pool_bps = COMPUTE_POOL_BPS;
         config.outcome_pool_bps = OUTCOME_POOL_BPS;
         config.treasury_tax_bps = TREASURY_TAX_BPS;
@@ -64,7 +64,10 @@ pub mod clawfarm_masterpool {
         config.master_pool_vault = ctx.accounts.master_pool_vault.key();
         config.updated_at = Clock::get()?.unix_timestamp;
 
-        msg!("Master Pool Vault created: {}", ctx.accounts.master_pool_vault.key());
+        msg!(
+            "Master Pool Vault created: {}",
+            ctx.accounts.master_pool_vault.key()
+        );
         Ok(())
     }
 
@@ -74,7 +77,10 @@ pub mod clawfarm_masterpool {
         config.treasury_vault = ctx.accounts.treasury_vault.key();
         config.updated_at = Clock::get()?.unix_timestamp;
 
-        msg!("Treasury Vault created: {}", ctx.accounts.treasury_vault.key());
+        msg!(
+            "Treasury Vault created: {}",
+            ctx.accounts.treasury_vault.key()
+        );
         Ok(())
     }
 
@@ -176,7 +182,10 @@ pub mod clawfarm_masterpool {
     ) -> Result<()> {
         let config = &ctx.accounts.config;
         require!(config.settlement_enabled, ErrorCode::SettlementNotEnabled);
-        require!(epoch_id == config.current_epoch + 1, ErrorCode::InvalidEpoch);
+        require!(
+            epoch_id == config.current_epoch + 1,
+            ErrorCode::InvalidEpoch
+        );
 
         let settlement = &mut ctx.accounts.settlement;
         settlement.epoch_id = epoch_id;
@@ -203,7 +212,10 @@ pub mod clawfarm_masterpool {
 
         let settlement = &mut ctx.accounts.settlement;
         require!(settlement.epoch_id == epoch_id, ErrorCode::InvalidEpoch);
-        require!(!settlement.compute_distributed, ErrorCode::AlreadyDistributed);
+        require!(
+            !settlement.compute_distributed,
+            ErrorCode::AlreadyDistributed
+        );
 
         let bump = ctx.bumps.pool_authority;
         let seeds = &[POOL_AUTHORITY_SEED, &[bump]];
@@ -214,14 +226,20 @@ pub mod clawfarm_masterpool {
         // (In production, epoch emission would be calculated from schedule)
 
         for (i, recipient_key) in recipients.iter().enumerate() {
-            if amounts[i] == 0 { continue; }
+            if amounts[i] == 0 {
+                continue;
+            }
             // Transfer from master pool vault to recipient
             // Note: in production, recipients would be pre-validated token accounts
             msg!("Compute reward: {} -> {} CLAW", recipient_key, amounts[i]);
         }
 
         settlement.compute_distributed = true;
-        msg!("Compute rewards distributed for epoch {}: {} total", epoch_id, total);
+        msg!(
+            "Compute rewards distributed for epoch {}: {} total",
+            epoch_id,
+            total
+        );
         Ok(())
     }
 
@@ -236,17 +254,26 @@ pub mod clawfarm_masterpool {
 
         let settlement = &mut ctx.accounts.settlement;
         require!(settlement.epoch_id == epoch_id, ErrorCode::InvalidEpoch);
-        require!(!settlement.outcome_distributed, ErrorCode::AlreadyDistributed);
+        require!(
+            !settlement.outcome_distributed,
+            ErrorCode::AlreadyDistributed
+        );
 
         let total: u64 = amounts.iter().sum();
 
         for (i, recipient_key) in recipients.iter().enumerate() {
-            if amounts[i] == 0 { continue; }
+            if amounts[i] == 0 {
+                continue;
+            }
             msg!("Outcome reward: {} -> {} CLAW", recipient_key, amounts[i]);
         }
 
         settlement.outcome_distributed = true;
-        msg!("Outcome rewards distributed for epoch {}: {} total", epoch_id, total);
+        msg!(
+            "Outcome rewards distributed for epoch {}: {} total",
+            epoch_id,
+            total
+        );
         Ok(())
     }
 
@@ -254,8 +281,14 @@ pub mod clawfarm_masterpool {
     pub fn finalize_epoch(ctx: Context<FinalizeEpoch>, epoch_id: u64) -> Result<()> {
         let settlement = &ctx.accounts.settlement;
         require!(settlement.epoch_id == epoch_id, ErrorCode::InvalidEpoch);
-        require!(settlement.compute_distributed, ErrorCode::DistributionIncomplete);
-        require!(settlement.outcome_distributed, ErrorCode::DistributionIncomplete);
+        require!(
+            settlement.compute_distributed,
+            ErrorCode::DistributionIncomplete
+        );
+        require!(
+            settlement.outcome_distributed,
+            ErrorCode::DistributionIncomplete
+        );
 
         let config = &mut ctx.accounts.config;
         config.current_epoch = epoch_id;

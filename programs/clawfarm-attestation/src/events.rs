@@ -1,0 +1,67 @@
+use anchor_lang::prelude::*;
+
+#[event]
+pub struct ConfigInitialized {
+    pub authority: Pubkey,
+    pub pause_authority: Pubkey,
+    pub challenge_resolver: Pubkey,
+}
+
+#[event]
+pub struct ProviderSignerUpserted {
+    pub provider_code: String,
+    pub signer: Pubkey,
+    pub key_id: String,
+    pub attester_type_mask: u8,
+}
+
+#[event]
+pub struct ProviderSignerRevoked {
+    pub provider_code: String,
+    pub signer: Pubkey,
+}
+
+#[event]
+pub struct PauseUpdated {
+    pub is_paused: bool,
+}
+
+#[event]
+pub struct ReceiptSubmitted {
+    pub request_nonce: String,
+    pub proof_id: String,
+    pub provider: String,
+    pub signer: Pubkey,
+    pub receipt_hash: [u8; 32],
+}
+
+#[event]
+pub struct ReceiptFinalized {
+    pub request_nonce: String,
+    pub proof_id: String,
+    pub provider: String,
+    pub signer: Pubkey,
+    pub receipt_hash: [u8; 32],
+}
+
+#[event]
+pub struct ChallengeOpened {
+    pub request_nonce: String,
+    pub challenger: Pubkey,
+    pub challenge_type: u8,
+}
+
+#[event]
+pub struct ChallengeResponded {
+    pub request_nonce: String,
+    pub challenger: Pubkey,
+    pub challenge_type: u8,
+}
+
+#[event]
+pub struct ChallengeResolved {
+    pub request_nonce: String,
+    pub challenger: Pubkey,
+    pub challenge_type: u8,
+    pub resolution_code: u8,
+}
