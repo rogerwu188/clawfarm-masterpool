@@ -247,6 +247,12 @@
           "writable": true
         },
         {
+          "name": "program"
+        },
+        {
+          "name": "program_data"
+        },
+        {
           "name": "system_program"
         }
       ],

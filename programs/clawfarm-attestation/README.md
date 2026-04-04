@@ -450,6 +450,8 @@ Accounts:
 
 - `payer`: signer, pays rent for `Config`
 - `config`: config PDA, initialized with seed `["config"]`
+- `program`: the current attestation program account
+- `program_data`: upgradeable loader `ProgramData` account for `program`
 - `system_program`
 
 Input parameters:
@@ -464,15 +466,50 @@ Input parameters:
 Function flow:
 
 1. checks the challenge window and bond values are positive
-2. initializes the config PDA
-3. writes all governance addresses, treasury, and timing values
-4. sets `is_paused = false`
-5. emits `ConfigInitialized`
+2. checks `program_data` matches the current program
+3. checks `payer` is the current program upgrade authority
+4. initializes the config PDA
+5. writes all governance addresses, treasury, and timing values
+6. sets `is_paused = false`
+7. emits `ConfigInitialized`
 
 Result:
 
 - a unique `Config` account exists and the program is ready for signer registry
   updates
+- bootstrap is locked to the program upgrade authority instead of any arbitrary
+  signer
+
+Deployment order:
+
+1. build and deploy the upgradeable program while your deployer wallet is still
+   the current upgrade authority:
+   - `anchor build`
+   - `anchor deploy --program-name clawfarm_attestation`
+2. immediately confirm the deployed program id, `ProgramData` address, and
+   upgrade authority:
+   - `solana program show 52WWsrQQcpAJn4cjSxMe4XGBvgGzPXa9gjAqUSfryAx2`
+3. run `initialize_config` from that same upgrade-authority wallet, passing:
+   - accounts: `payer`, `config`, `program`, `program_data`, `system_program`
+   - args: `authority`, `pause_authority`, `challenge_resolver`, `treasury`,
+     `challenge_window_seconds`, `challenge_bond_lamports`
+4. set the config args to the long-lived operational addresses you actually want
+   to control the protocol:
+   - `authority`: governance or multisig
+   - `pause_authority`: emergency operator or governance
+   - `challenge_resolver`: resolver bot hot wallet
+   - `treasury`: bond escrow destination
+5. verify the newly created config on-chain before doing anything else that
+   depends on it
+6. only after successful initialization should you consider rotating or burning
+   the program upgrade authority
+
+Important deployment note:
+
+- if you deploy the program and then remove upgrade authority before calling
+  `initialize_config`, bootstrap will be permanently blocked by design
+- `payer` only needs to be the temporary bootstrap signer; `config.authority`
+  can and usually should be a different long-lived governance address
 
 ## 2. `upsert_provider_signer`
 

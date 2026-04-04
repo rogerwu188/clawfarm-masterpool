@@ -280,6 +280,8 @@ Checks:
 
 - `challenge_window_seconds > 0`
 - `challenge_bond_lamports > 0`
+- `program_data` must match the current program
+- initializer must equal the current program upgrade authority
 
 Effects:
 

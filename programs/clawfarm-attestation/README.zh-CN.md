@@ -426,6 +426,8 @@ pub fn initialize_config(
 
 - `payer`：签名者，支付 `Config` 的 rent
 - `config`：通过 `["config"]` 初始化的 config PDA
+- `program`：当前 attestation program 账户
+- `program_data`：该 program 对应的 upgradeable loader `ProgramData` 账户
 - `system_program`
 
 入参说明：
@@ -440,14 +442,44 @@ pub fn initialize_config(
 功能流程：
 
 1. 校验 challenge window 和 bond 金额都大于 0
-2. 初始化 config PDA
-3. 写入治理地址、treasury 和时间窗口
-4. 设置 `is_paused = false`
-5. 发出 `ConfigInitialized`
+2. 校验 `program_data` 确实对应当前 program
+3. 校验 `payer` 就是当前 program 的 upgrade authority
+4. 初始化 config PDA
+5. 写入治理地址、treasury 和时间窗口
+6. 设置 `is_paused = false`
+7. 发出 `ConfigInitialized`
 
 结果：
 
 - 唯一的 `Config` 账户被创建，程序可开始管理 signer 和 receipt
+- bootstrap 权限被锁定为 program upgrade authority，而不是任意 signer
+
+部署顺序建议：
+
+1. 在 deployer 钱包仍然持有当前 upgrade authority 的前提下，先 build 和
+   deploy 可升级程序：
+   - `anchor build`
+   - `anchor deploy --program-name clawfarm_attestation`
+2. 立刻确认部署后的 program id、`ProgramData` 地址和 upgrade authority：
+   - `solana program show 52WWsrQQcpAJn4cjSxMe4XGBvgGzPXa9gjAqUSfryAx2`
+3. 使用同一个 upgrade-authority 钱包执行 `initialize_config`，并传入：
+   - accounts：`payer`、`config`、`program`、`program_data`、`system_program`
+   - args：`authority`、`pause_authority`、`challenge_resolver`、`treasury`、
+     `challenge_window_seconds`、`challenge_bond_lamports`
+4. 把 config 参数设置成真正长期负责协议运维的地址：
+   - `authority`：治理地址或 multisig
+   - `pause_authority`：紧急操作地址或治理地址
+   - `challenge_resolver`：resolver 机器人热钱包
+   - `treasury`：bond 托管地址
+5. 先验证 config 已经成功写入链上，再执行任何依赖 config 的后续操作
+6. 只有在初始化成功后，才考虑 rotate 或烧掉 program 的 upgrade authority
+
+重要部署说明：
+
+- 如果程序部署后先移除了 upgrade authority，再去调用 `initialize_config`，
+  那么 bootstrap 会按设计被永久阻塞
+- `payer` 只需要是临时 bootstrap 签名者；`config.authority` 可以而且通常应当
+  设为另一个长期治理地址
 
 ## 2. `upsert_provider_signer`
 
