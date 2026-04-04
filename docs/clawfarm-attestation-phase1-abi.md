@@ -232,6 +232,8 @@ Accounts:
 ```text
 [writable, signer] payer
 [writable]         config
+[]                 program
+[]                 program_data
 []                 system_program
 ```
 
@@ -239,6 +241,8 @@ Runtime rules:
 
 - `challenge_window_seconds > 0`
 - `challenge_bond_lamports > 0`
+- `program_data` must match the current program
+- `payer` must be the current program upgrade authority
 
 ## 2. `upsert_provider_signer`
 

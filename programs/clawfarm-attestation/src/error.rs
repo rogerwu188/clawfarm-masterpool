@@ -68,6 +68,10 @@ pub enum ErrorCode {
     InvalidChallengeBond,
     #[msg("Treasury pubkey is invalid")]
     InvalidTreasury,
+    #[msg("Program data account does not match this program")]
+    InvalidProgramData,
+    #[msg("Initializer is not the current program upgrade authority")]
+    UnauthorizedInitializer,
     #[msg("String exceeds the phase 1 maximum length")]
     StringTooLong,
     #[msg("Receipt hash does not match the canonical payload")]

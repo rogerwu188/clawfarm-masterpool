@@ -105,6 +105,16 @@ pub struct InitializeConfig<'info> {
         bump
     )]
     pub config: Account<'info, Config>,
+    #[account(
+        constraint = program.programdata_address()? == Some(program_data.key())
+            @ ErrorCode::InvalidProgramData
+    )]
+    pub program: Program<'info, crate::program::ClawfarmAttestation>,
+    #[account(
+        constraint = program_data.upgrade_authority_address == Some(payer.key())
+            @ ErrorCode::UnauthorizedInitializer
+    )]
+    pub program_data: Account<'info, ProgramData>,
     pub system_program: Program<'info, System>,
 }
 
