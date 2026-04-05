@@ -3,10 +3,6 @@
 `clawfarm-attestation` is a dedicated Solana program for Clawfarm Phase 1
 receipt attestation.
 
-Chinese version:
-
-- [README.zh-CN.md](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/programs/clawfarm-attestation/README.zh-CN.md)
-
 Its responsibilities are:
 
 - maintain a provider signer registry
@@ -16,6 +12,13 @@ Its responsibilities are:
 - close terminal receipt and challenge accounts to reclaim rent
 
 This README documents the current on-chain implementation in this repository.
+
+Source of truth:
+
+- [lib.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/programs/clawfarm-attestation/src/lib.rs)
+- [receipt.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/programs/clawfarm-attestation/src/instructions/receipt.rs)
+- [challenge.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/programs/clawfarm-attestation/src/instructions/challenge.rs)
+- [types.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/programs/clawfarm-attestation/src/state/types.rs)
 
 ## High-Level Model
 
@@ -36,6 +39,23 @@ The trust boundary is:
 3. the program checks `sha256(canonical_payload) == receipt_hash`
 4. the program checks the preceding `ed25519` verify instruction
 5. the program stores a minimal receipt anchor keyed by `request_nonce`
+
+## Current Implementation Constraints
+
+- one `Receipt` PDA exists per `request_nonce`
+- one `Challenge` PDA exists per `Receipt`
+- there is no `respond_challenge` instruction in the current program
+- `ChallengeStatus` has only three on-chain values:
+  - `Open`
+  - `Accepted`
+  - `Rejected`
+- the full receipt body is not stored on-chain and no `proof_url` is stored on-chain
+
+Signer roles are intentionally split:
+
+- `authority`: submits receipts, finalizes uncontested receipts, closes terminal accounts
+- `challenge_resolver`: resolves open challenges
+- `challenger`: opens a challenge and posts the challenge bond
 
 ## Program State
 
@@ -120,6 +140,10 @@ Fields:
 Purpose:
 
 - one dispute slot against one receipt
+
+Constraint:
+
+- the current implementation does not support multiple concurrent challenge PDAs per receipt
 
 ## Enum Values
 
@@ -769,6 +793,11 @@ Result:
 - the receipt is now in `Challenged` state
 - the challenger bond is escrowed in `config.treasury`
 
+Current limitation:
+
+- the program supports one challenge slot per receipt, so a second challenge for the
+  same receipt cannot be opened until the existing challenge is resolved and closed
+
 ## 7. `resolve_challenge`
 
 Implementation:
@@ -808,6 +837,7 @@ Function flow:
 Result:
 
 - the receipt leaves the active dispute state and becomes closable later
+- challenge resolution is single-step; there is no separate on-chain response phase
 
 ## 8. `finalize_receipt`
 
@@ -937,6 +967,10 @@ Closable challenge states:
 
 - `Accepted`
 - `Rejected`
+
+Instruction intentionally absent in the current implementation:
+
+- `respond_challenge`
 
 ## Events
 

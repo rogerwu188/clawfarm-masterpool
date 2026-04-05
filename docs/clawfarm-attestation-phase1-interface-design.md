@@ -2,12 +2,19 @@
 
 Status: Implemented
 Version: v1
-Last Updated: 2026-04-04
+Last Updated: 2026-04-05
 
 ## Scope
 
 This document describes the current Phase 1 on-chain interface of the dedicated
 `clawfarm_attestation` Solana program in this repository.
+
+Source of truth:
+
+- `programs/clawfarm-attestation/src/lib.rs`
+- `programs/clawfarm-attestation/src/instructions/receipt.rs`
+- `programs/clawfarm-attestation/src/instructions/challenge.rs`
+- `programs/clawfarm-attestation/src/state/types.rs`
 
 Phase 1 is intentionally narrow:
 
@@ -24,6 +31,17 @@ Phase 1 does not:
 - fetch data from S3, IPFS, or any off-chain endpoint
 - execute final provider reward or slashing settlement
 - do trustless proof verification beyond signer and digest validation
+
+Current implementation constraints that matter for integrators:
+
+- one `Receipt` PDA exists per `request_nonce`
+- one `Challenge` PDA exists per `Receipt`
+- there is no `respond_challenge` instruction
+- there is no on-chain `proof_url`
+- on-chain `ChallengeStatus` currently has only:
+  - `Open`
+  - `Accepted`
+  - `Rejected`
 
 ## Design Summary
 
@@ -96,6 +114,20 @@ Reason:
 - the transaction fee on Solana is small
 - the real cost is account rent held by `Receipt` and `Challenge`
 - reclaiming rent after terminal state is the main cost optimization
+
+### 6. Explicit Signer Separation
+
+The current program uses three distinct signer roles:
+
+- `authority`: `submit_receipt`, `finalize_receipt`, `close_challenge`, `close_receipt`
+- `challenge_resolver`: `resolve_challenge`
+- `challenger`: `open_challenge`
+
+Reason:
+
+- receipt submission and uncontested finalization stay under governance control
+- dispute resolution can be delegated to a separate bot-controlled signer
+- challengers only need permission to open disputes and post a bond
 
 ## Program State
 
@@ -193,6 +225,7 @@ Purpose:
 Notes:
 
 - `request_nonce` is not stored; it is only used to derive the receipt PDA
+- there is only one challenge slot per receipt in the current implementation
 
 ## Enum Mapping
 
@@ -454,6 +487,11 @@ Effects:
 - sets `challenge.status = Open`
 - sets `receipt.status = Challenged`
 
+Limitation:
+
+- a second challenge for the same receipt cannot coexist with the first one because
+  the PDA seed is only `["challenge", receipt.key()]`
+
 ## 7. `resolve_challenge`
 
 Purpose:
@@ -490,6 +528,11 @@ Effects:
   - `challenge.status = Rejected`
   - `receipt.status = Finalized`
   - `receipt.finalized_at = now`
+
+Note:
+
+- challenge resolution is single-step in the current implementation; there is no
+  separate on-chain response phase before resolution
 
 ## 8. `finalize_receipt`
 
@@ -597,6 +640,10 @@ Closable challenge states:
 
 - `Accepted`
 - `Rejected`
+
+Instruction intentionally absent:
+
+- `respond_challenge`
 
 ## Canonicalization Contract
 

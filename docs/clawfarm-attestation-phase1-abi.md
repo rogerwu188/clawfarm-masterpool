@@ -2,7 +2,7 @@
 
 Status: Implemented
 Version: v1
-Last Updated: 2026-04-04
+Last Updated: 2026-04-05
 
 This document reflects the current ABI of the dedicated
 `clawfarm_attestation` Solana program in this repository.
@@ -10,6 +10,14 @@ This document reflects the current ABI of the dedicated
 Reference:
 
 - [clawfarm-attestation-phase1-interface-design.md](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/docs/clawfarm-attestation-phase1-interface-design.md)
+
+Source of truth:
+
+- `programs/clawfarm-attestation/src/lib.rs`
+- `programs/clawfarm-attestation/src/instructions/receipt.rs`
+- `programs/clawfarm-attestation/src/instructions/challenge.rs`
+- `programs/clawfarm-attestation/src/state/accounts.rs`
+- `programs/clawfarm-attestation/src/state/types.rs`
 
 ## Phase 1 Freeze
 
@@ -23,6 +31,13 @@ The following are frozen in the current implementation:
 - on-chain receipt shape: `ReceiptLite`
 - challenge resolution: governance-driven
 - terminal account close flow: enabled
+
+Current ABI constraints:
+
+- one `Receipt` PDA per `request_nonce`
+- one `Challenge` PDA per `Receipt`
+- no `respond_challenge` instruction
+- no `proof_url` field in on-chain account state
 
 ## Constants
 
@@ -463,6 +478,28 @@ Accounts:
 Runtime rule:
 
 - receipt must already be terminal
+
+## Signer Matrix
+
+```text
+submit_receipt    -> authority
+open_challenge    -> challenger
+resolve_challenge -> challenge_resolver
+finalize_receipt  -> authority
+close_challenge   -> authority
+close_receipt     -> authority
+```
+
+## Intentionally Absent Instruction
+
+```text
+respond_challenge
+```
+
+Challenge resolution in the current implementation is single-step:
+
+- challenger opens the challenge
+- `config.challenge_resolver` resolves it directly
 
 ## Canonicalization Contract
 

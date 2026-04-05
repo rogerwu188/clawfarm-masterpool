@@ -1,7 +1,9 @@
 {
   "name": "clawfarm_attestation",
-  "version": "0.1.0-implemented",
+  "version": "0.1.0-source-aligned",
   "phase": "phase1",
+  "last_updated": "2026-04-05",
+  "source_of_truth": "programs/clawfarm-attestation/src",
   "accepted_values": {
     "proof_mode": [
       "sig_log"
@@ -27,6 +29,12 @@
     "PROVIDER_SIGNER_SEED": "provider_signer",
     "RECEIPT_SEED": "receipt",
     "CHALLENGE_SEED": "challenge"
+  },
+  "implementation_constraints": {
+    "single_receipt_per_request_nonce": true,
+    "single_challenge_per_receipt": true,
+    "respond_challenge_instruction": false,
+    "onchain_proof_url": false
   },
   "enums": {
     "ProofMode": {
