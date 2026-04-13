@@ -54,7 +54,8 @@ Phase 1 does not attempt to solve:
 
 ### Assets
 
-- `CLAW`: reward / penalty token minted once, managed by the masterpool program
+- `CLAW`: reward / penalty token minted once, managed by the masterpool program;
+  uses `6` decimals
 - `USDC`: settlement token for provider stake and user payment flow
 
 ## 4. Fixed High-Level Rules Confirmed
@@ -67,6 +68,8 @@ The following business rules are fixed for Phase 1.
 - Mint the entire supply into a masterpool-controlled reward vault.
 - The protocol should not rely on long-lived mint authority for routine reward
   issuance.
+- `CLAW` uses `6` decimals, so the on-chain mint supply is
+  `1_000_000_000 * 10^6`.
 
 ### Provider identity and stake
 
@@ -154,6 +157,8 @@ All parameters below are modifiable only by the deployer / admin authority.
 
 - `exchange_rate_usdc_to_claw`
   - default `1:1`
+  - interpreted in base units with both assets using `6` decimals, so
+    `1 USDC` maps to `1 CLAW` by default
 - `provider_stake_usdc`
   - default `100 USDC`
 - `provider_usdc_share_bps1000`
@@ -181,6 +186,8 @@ Parameter invariants:
 - `user_claw_share_bps1000 + provider_claw_share_bps1000 == 1000`
 - `challenger_reward_bps1000 + burn_bps1000 == 1000`
 - stake / bond / slash values must all be non-zero positive integers
+- `CLAW` mint decimals are fixed at `6`
+- `USDC` is assumed to use `6` decimals in Phase 1 accounting
 - parameter changes apply only to future receipts / future challenges
 - historical receipt settlements must use snapshotted values, never re-derived
   from the latest config
@@ -590,7 +597,9 @@ written.
 - whether challenger reward from Provider slash is sent immediately or first
   enters a lockup account
 - exact signed integer width for `claw_net_position`
-- exact decimal-handling rule for `exchange_rate_usdc_to_claw`
+- exact storage format for `exchange_rate_usdc_to_claw`; recommended default is
+  rational form with numerator / denominator in 6-decimal base units so the
+  initial ratio is exactly `1_000_000 : 1_000_000`
 
 ## 12. Phase 2 Boundary
 
