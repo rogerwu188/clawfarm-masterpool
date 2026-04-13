@@ -13,29 +13,28 @@ pub fn initialize_config(
     authority: Pubkey,
     pause_authority: Pubkey,
     challenge_resolver: Pubkey,
-    treasury: Pubkey,
+    masterpool_program: Pubkey,
     challenge_window_seconds: i64,
-    challenge_bond_lamports: u64,
 ) -> Result<()> {
     require!(challenge_window_seconds > 0, ErrorCode::InvalidWindow);
-    require!(challenge_bond_lamports > 0, ErrorCode::InvalidChallengeBond);
-    require!(treasury != Pubkey::default(), ErrorCode::InvalidTreasury);
+    require!(
+        masterpool_program != Pubkey::default(),
+        ErrorCode::InvalidMasterpoolProgram
+    );
 
     let config = &mut ctx.accounts.config;
     config.authority = authority;
     config.pause_authority = pause_authority;
     config.challenge_resolver = challenge_resolver;
-    config.treasury = treasury;
+    config.masterpool_program = masterpool_program;
     config.challenge_window_seconds = challenge_window_seconds;
-    config.challenge_bond_lamports = challenge_bond_lamports;
     config.is_paused = false;
 
     emit!(ConfigInitialized {
         authority,
         pause_authority,
         challenge_resolver,
-        treasury,
-        challenge_bond_lamports,
+        masterpool_program,
     });
     Ok(())
 }
@@ -72,7 +71,6 @@ pub fn upsert_provider_signer(
 pub fn set_pause(ctx: Context<SetPause>, is_paused: bool) -> Result<()> {
     let config = &mut ctx.accounts.config;
     config.is_paused = is_paused;
-
     emit!(PauseUpdated { is_paused });
     Ok(())
 }
@@ -105,16 +103,6 @@ pub struct InitializeConfig<'info> {
         bump
     )]
     pub config: Account<'info, Config>,
-    #[account(
-        constraint = program.programdata_address()? == Some(program_data.key())
-            @ ErrorCode::InvalidProgramData
-    )]
-    pub program: Program<'info, crate::program::ClawfarmAttestation>,
-    #[account(
-        constraint = program_data.upgrade_authority_address == Some(payer.key())
-            @ ErrorCode::UnauthorizedInitializer
-    )]
-    pub program_data: Account<'info, ProgramData>,
     pub system_program: Program<'info, System>,
 }
 

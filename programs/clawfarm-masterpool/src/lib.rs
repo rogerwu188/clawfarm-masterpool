@@ -6,23 +6,43 @@ mod constants;
 mod error;
 mod instructions;
 mod state;
+mod utils;
+
+#[allow(unused_imports)]
+use instructions::challenge::{
+    __client_accounts_record_challenge_bond, __client_accounts_resolve_challenge_economics,
+    __cpi_client_accounts_record_challenge_bond, __cpi_client_accounts_resolve_challenge_economics,
+};
+#[allow(unused_imports)]
+use instructions::config::{
+    __client_accounts_initialize_masterpool, __client_accounts_mint_genesis_supply,
+    __client_accounts_set_pause_flags, __client_accounts_update_config,
+    __cpi_client_accounts_initialize_masterpool, __cpi_client_accounts_mint_genesis_supply,
+    __cpi_client_accounts_set_pause_flags, __cpi_client_accounts_update_config,
+};
+#[allow(unused_imports)]
+use instructions::provider::{
+    __client_accounts_exit_provider, __client_accounts_register_provider,
+    __cpi_client_accounts_exit_provider, __cpi_client_accounts_register_provider,
+};
+#[allow(unused_imports)]
+use instructions::receipt::{
+    __client_accounts_record_mining_from_receipt, __client_accounts_settle_finalized_receipt,
+    __cpi_client_accounts_record_mining_from_receipt, __cpi_client_accounts_settle_finalized_receipt,
+};
+#[allow(unused_imports)]
+use instructions::reward::{
+    __client_accounts_claim_released_claw, __client_accounts_materialize_reward_release,
+    __cpi_client_accounts_claim_released_claw, __cpi_client_accounts_materialize_reward_release,
+};
 
 pub use constants::*;
 pub use error::ErrorCode;
-use instructions::admin::__client_accounts_admin_action;
-use instructions::distribution::{
-    __client_accounts_distribute_rewards, __client_accounts_finalize_epoch,
-    __client_accounts_submit_settlement,
-};
-use instructions::setup::{
-    __client_accounts_create_master_pool_vault, __client_accounts_create_treasury_vault,
-    __client_accounts_initialize_master_pool, __client_accounts_mint_genesis_supply,
-    __client_accounts_revoke_freeze_authority, __client_accounts_revoke_mint_authority,
-};
 pub use instructions::{
-    AdminAction, CreateMasterPoolVault, CreateTreasuryVault, DistributeRewards, FinalizeEpoch,
-    InitializeMasterPool, MintGenesisSupply, RevokeFreezeAuthority, RevokeMintAuthority,
-    SubmitSettlement,
+    ClaimReleasedClaw, ExitProvider, InitializeMasterpool, MaterializeRewardRelease,
+    MintGenesisSupply, RecordChallengeBond, RecordMiningFromReceipt, RecordMiningFromReceiptArgs,
+    RegisterProvider, ResolveChallengeEconomics, SetPauseFlags, SettleFinalizedReceipt,
+    UpdateConfig,
 };
 pub use state::*;
 
@@ -32,77 +52,78 @@ declare_id!("3sk574EAo5fhTCaj9hyDou4pgLBV7TgTSWZPyNeA8TLM");
 pub mod clawfarm_masterpool {
     use super::*;
 
-    pub fn initialize_master_pool(
-        ctx: Context<InitializeMasterPool>,
-        admin_multisig: Pubkey,
-        timelock_authority: Pubkey,
+    pub fn initialize_masterpool(
+        ctx: Context<InitializeMasterpool>,
+        params: Phase1ConfigParams,
     ) -> Result<()> {
-        instructions::setup::initialize_master_pool(ctx, admin_multisig, timelock_authority)
-    }
-
-    pub fn create_master_pool_vault(ctx: Context<CreateMasterPoolVault>) -> Result<()> {
-        instructions::setup::create_master_pool_vault(ctx)
-    }
-
-    pub fn create_treasury_vault(ctx: Context<CreateTreasuryVault>) -> Result<()> {
-        instructions::setup::create_treasury_vault(ctx)
+        instructions::config::initialize_masterpool(ctx, params)
     }
 
     pub fn mint_genesis_supply(ctx: Context<MintGenesisSupply>) -> Result<()> {
-        instructions::setup::mint_genesis_supply(ctx)
+        instructions::config::mint_genesis_supply(ctx)
     }
 
-    pub fn revoke_mint_authority(ctx: Context<RevokeMintAuthority>) -> Result<()> {
-        instructions::setup::revoke_mint_authority(ctx)
+    pub fn update_config(ctx: Context<UpdateConfig>, params: Phase1ConfigParams) -> Result<()> {
+        instructions::config::update_config(ctx, params)
     }
 
-    pub fn revoke_freeze_authority(ctx: Context<RevokeFreezeAuthority>) -> Result<()> {
-        instructions::setup::revoke_freeze_authority(ctx)
-    }
-
-    pub fn submit_epoch_settlement(
-        ctx: Context<SubmitSettlement>,
-        epoch_id: u64,
-        total_compute_score: u64,
-        total_outcome_score: u64,
-        settlement_hash: [u8; 32],
+    pub fn set_pause_flags(
+        ctx: Context<SetPauseFlags>,
+        pause_receipt_recording: bool,
+        pause_challenge_processing: bool,
+        pause_finalization: bool,
+        pause_claims: bool,
     ) -> Result<()> {
-        instructions::distribution::submit_epoch_settlement(
+        instructions::config::set_pause_flags(
             ctx,
-            epoch_id,
-            total_compute_score,
-            total_outcome_score,
-            settlement_hash,
+            pause_receipt_recording,
+            pause_challenge_processing,
+            pause_finalization,
+            pause_claims,
         )
     }
 
-    pub fn distribute_compute_rewards(
-        ctx: Context<DistributeRewards>,
-        epoch_id: u64,
-        recipients: Vec<Pubkey>,
-        amounts: Vec<u64>,
+    pub fn register_provider(ctx: Context<RegisterProvider>) -> Result<()> {
+        instructions::provider::register_provider(ctx)
+    }
+
+    pub fn exit_provider(ctx: Context<ExitProvider>) -> Result<()> {
+        instructions::provider::exit_provider(ctx)
+    }
+
+    pub fn materialize_reward_release(
+        ctx: Context<MaterializeRewardRelease>,
+        amount: u64,
     ) -> Result<()> {
-        instructions::distribution::distribute_compute_rewards(ctx, epoch_id, recipients, amounts)
+        instructions::reward::materialize_reward_release(ctx, amount)
     }
 
-    pub fn distribute_outcome_rewards(
-        ctx: Context<DistributeRewards>,
-        epoch_id: u64,
-        recipients: Vec<Pubkey>,
-        amounts: Vec<u64>,
+    pub fn claim_released_claw(ctx: Context<ClaimReleasedClaw>) -> Result<()> {
+        instructions::reward::claim_released_claw(ctx)
+    }
+
+    pub fn record_mining_from_receipt(
+        ctx: Context<RecordMiningFromReceipt>,
+        args: RecordMiningFromReceiptArgs,
     ) -> Result<()> {
-        instructions::distribution::distribute_outcome_rewards(ctx, epoch_id, recipients, amounts)
+        instructions::receipt::record_mining_from_receipt(ctx, args)
     }
 
-    pub fn finalize_epoch(ctx: Context<FinalizeEpoch>, epoch_id: u64) -> Result<()> {
-        instructions::distribution::finalize_epoch(ctx, epoch_id)
+    pub fn settle_finalized_receipt(
+        ctx: Context<SettleFinalizedReceipt>,
+        attestation_receipt_status: u8,
+    ) -> Result<()> {
+        instructions::receipt::settle_finalized_receipt(ctx, attestation_receipt_status)
     }
 
-    pub fn enable_settlement(ctx: Context<AdminAction>) -> Result<()> {
-        instructions::admin::enable_settlement(ctx)
+    pub fn record_challenge_bond(ctx: Context<RecordChallengeBond>) -> Result<()> {
+        instructions::challenge::record_challenge_bond(ctx)
     }
 
-    pub fn finalize_upgrade_freeze(ctx: Context<AdminAction>) -> Result<()> {
-        instructions::admin::finalize_upgrade_freeze(ctx)
+    pub fn resolve_challenge_economics(
+        ctx: Context<ResolveChallengeEconomics>,
+        resolution_code: u8,
+    ) -> Result<()> {
+        instructions::challenge::resolve_challenge_economics(ctx, resolution_code)
     }
 }

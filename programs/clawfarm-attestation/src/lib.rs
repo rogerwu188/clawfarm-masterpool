@@ -1,9 +1,5 @@
 #![allow(unexpected_cfgs)]
 
-// Phase 1 program implementation:
-// config, signer management, receipt submission, and challenge lifecycle are
-// wired for the Phase 1 sig_log/provider_reported path.
-
 use anchor_lang::prelude::*;
 
 mod constants;
@@ -13,9 +9,6 @@ mod instructions;
 mod state;
 mod utils;
 
-pub use constants::*;
-pub use error::ErrorCode;
-pub use events::*;
 use instructions::admin::{
     __client_accounts_initialize_config, __client_accounts_revoke_provider_signer,
     __client_accounts_set_pause, __client_accounts_upsert_provider_signer,
@@ -28,6 +21,10 @@ use instructions::receipt::{
     __client_accounts_close_receipt, __client_accounts_finalize_receipt,
     __client_accounts_submit_receipt,
 };
+
+pub use constants::*;
+pub use error::ErrorCode;
+pub use events::*;
 pub use instructions::{
     CloseChallenge, CloseReceipt, FinalizeReceipt, InitializeConfig, OpenChallenge,
     ResolveChallenge, RevokeProviderSigner, SetPause, SubmitReceipt, UpsertProviderSigner,
@@ -45,18 +42,16 @@ pub mod clawfarm_attestation {
         authority: Pubkey,
         pause_authority: Pubkey,
         challenge_resolver: Pubkey,
-        treasury: Pubkey,
+        masterpool_program: Pubkey,
         challenge_window_seconds: i64,
-        challenge_bond_lamports: u64,
     ) -> Result<()> {
         instructions::admin::initialize_config(
             ctx,
             authority,
             pause_authority,
             challenge_resolver,
-            treasury,
+            masterpool_program,
             challenge_window_seconds,
-            challenge_bond_lamports,
         )
     }
 

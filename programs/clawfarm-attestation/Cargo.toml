@@ -14,9 +14,15 @@ no-idl = []
 no-log-ix-name = []
 cpi = ["no-entrypoint"]
 default = []
-idl-build = ["anchor-lang/idl-build"]
+idl-build = [
+    "anchor-lang/idl-build",
+    "anchor-spl/idl-build",
+    "clawfarm-masterpool/idl-build",
+]
 
 [dependencies]
 anchor-lang = { version = "0.32.1", features = ["init-if-needed"] }
+anchor-spl = "0.32.1"
+clawfarm-masterpool = { path = "../clawfarm-masterpool", features = ["cpi"] }
 solana-sdk-ids = "2.2.1"
 solana-sha256-hasher = "2.3.0"

@@ -64,10 +64,8 @@ pub enum ErrorCode {
     InvalidValidityWindow,
     #[msg("Window value is invalid")]
     InvalidWindow,
-    #[msg("Challenge bond value is invalid")]
-    InvalidChallengeBond,
-    #[msg("Treasury pubkey is invalid")]
-    InvalidTreasury,
+    #[msg("Masterpool program is invalid")]
+    InvalidMasterpoolProgram,
     #[msg("Program data account does not match this program")]
     InvalidProgramData,
     #[msg("Initializer is not the current program upgrade authority")]
@@ -84,4 +82,8 @@ pub enum ErrorCode {
     ReceiptNotClosable,
     #[msg("Challenge is not in a terminal state and cannot be closed")]
     ChallengeNotClosable,
+    #[msg("Receipt economics must be forwarded to masterpool before close")]
+    ReceiptEconomicsPending,
+    #[msg("Receipt economics were already forwarded to masterpool")]
+    ReceiptAlreadySettled,
 }

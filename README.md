@@ -1,90 +1,59 @@
-# ClawFarm Master Pool
+# ClawFarm Phase 1 Economics
 
-Program-controlled vault for Genesis emission and protocol-controlled distribution on Solana.
+This repository now implements the Phase 1 receipt-driven economic model for
+ClawFarm on Solana.
 
-## Architecture
+The previous epoch-settlement masterpool flow has been removed from the active
+design. `clawfarm-masterpool` is now the protocol economic authority, while
+`clawfarm-attestation` is the receipt and challenge lifecycle authority that
+invokes masterpool through CPI.
 
-```
-┌─────────────────────────────────────────────┐
-│              clawfarm-masterpool             │
-│                  (Program)                   │
-├─────────────────────────────────────────────┤
-│  Config PDA        │ rules, ratios, state   │
-│  Master Pool Vault │ CLAW tokens (PDA-owned)│
-│  Treasury Vault    │ USDC (PDA-owned)       │
-│  Pool Authority    │ PDA signer             │
-└─────────────────────────────────────────────┘
-```
+## Programs
 
-## Key Rules
+- `clawfarm-masterpool`
+  - owns the reward, treasury, provider stake, provider pending-revenue, and
+    challenge-bond vaults
+  - tracks provider registration, reward balances, receipt settlements, and
+    challenge bond records
+  - mints the fixed `1_000_000_000 * 10^6` `CLAW` genesis supply once into the
+    reward vault
+- `clawfarm-attestation`
+  - verifies signed receipts and signer registry membership
+  - maintains receipt and challenge state transitions
+  - forwards receipt recording, finalized settlement, challenge-bond recording,
+    and challenge-economics resolution to masterpool through CPI
 
-| Parameter | Value |
-|-----------|-------|
-| Compute Pool | 50% |
-| Outcome Pool | 50% |
-| Treasury Tax | 3% of billed usage (USDC) |
-| Genesis Supply | 1,000,000,000 CLAW |
-| Decimals | 6 |
+## Phase 1 Rules
 
-## Hard Constraints
+- One provider equals one wallet and must stake USDC to register.
+- User payments are charged per receipt, not per epoch.
+- User-paid USDC is split between provider escrow and treasury at record time.
+- User and provider `CLAW` rewards are snapshotted and booked as locked balances.
+- Provider `CLAW` penalties are tracked as a signed net position and future
+  provider rewards offset negative balance before new locked rewards are added.
+- Provider USDC is released only after attestation marks the receipt finalized.
+- Challenge bonds are funded in `CLAW`, not lamports.
+- Rejected challenges burn the challenger's bond.
+- Accepted challenges return the bond, refund the payer's provider-share USDC,
+  slash the provider's signed `CLAW` position, transfer the challenger's slash
+  reward from inventory, and burn the remainder.
+- Phase 1 defines locked, released, and claimed reward accounting but does not
+  include an automated daily unlock executor.
 
-- Master Pool Vault is **program-owned** (PDA)
-- No direct private-key withdrawal path
-- Bots can submit settlement but cannot move pool funds
-- Mint authority revoked after Genesis mint (permanent)
-- Freeze authority revoked after Genesis mint (permanent)
-- Upgrade authority under multisig/timelock, then revoked
+## Main Accounts
 
-## Deployment Phases
+- `GlobalConfig`
+- `ProviderAccount`
+- `RewardAccount` for both users and providers
+- `ReceiptSettlement`
+- `ChallengeBondRecord`
 
-### Phase A — Infrastructure
-1. Deploy program
-2. Create Config, Master Pool Vault, Treasury Vault PDAs
-3. Publish addresses on clawfarm.network/masterpool
-
-### Phase B — Genesis Mint
-1. Mint 1B CLAW to Master Pool Vault
-2. Revoke mint authority
-3. Revoke freeze authority
-
-### Phase C — Settlement
-1. Enable settlement
-2. Submit epoch results
-3. Distribute compute + outcome rewards
-
-### Phase D — Final Freeze
-1. Freeze upgrade authority
+See [docs/phase1-core-economics.md](docs/phase1-core-economics.md) for the full
+account layout, instruction set, and state-machine flow.
 
 ## Development
 
 ```bash
-# Build
 anchor build
-
-# Test (localnet)
 anchor test
-
-# Deploy to devnet
-anchor deploy --provider.cluster devnet
 ```
-
-## Instructions
-
-| Instruction | Phase | Description |
-|-------------|-------|-------------|
-| `initialize_master_pool` | A | Create config with rules |
-| `create_master_pool_vault` | A | Create CLAW vault PDA |
-| `create_treasury_vault` | A | Create USDC vault PDA |
-| `mint_genesis_supply` | B | One-time 1B CLAW mint |
-| `revoke_mint_authority` | B | Permanent, irreversible |
-| `revoke_freeze_authority` | B | Permanent, irreversible |
-| `submit_epoch_settlement` | C | Bot submits settlement |
-| `distribute_compute_rewards` | C | 50% by billed usage |
-| `distribute_outcome_rewards` | C | 50% by settled tasks |
-| `finalize_epoch` | C | Advance epoch counter |
-| `enable_settlement` | C | Admin enables settlement |
-| `finalize_upgrade_freeze` | D | Permanent, irreversible |
-
-## License
-
-MIT

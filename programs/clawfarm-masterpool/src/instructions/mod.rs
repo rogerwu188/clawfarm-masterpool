@@ -1,10 +1,11 @@
-pub mod admin;
-pub mod distribution;
-pub mod setup;
+pub mod challenge;
+pub mod config;
+pub mod provider;
+pub mod receipt;
+pub mod reward;
 
-pub use admin::AdminAction;
-pub use distribution::{DistributeRewards, FinalizeEpoch, SubmitSettlement};
-pub use setup::{
-    CreateMasterPoolVault, CreateTreasuryVault, InitializeMasterPool, MintGenesisSupply,
-    RevokeFreezeAuthority, RevokeMintAuthority,
-};
+pub use challenge::{RecordChallengeBond, ResolveChallengeEconomics};
+pub use config::{InitializeMasterpool, MintGenesisSupply, SetPauseFlags, UpdateConfig};
+pub use provider::{ExitProvider, RegisterProvider};
+pub use receipt::{RecordMiningFromReceipt, RecordMiningFromReceiptArgs, SettleFinalizedReceipt};
+pub use reward::{ClaimReleasedClaw, MaterializeRewardRelease};
