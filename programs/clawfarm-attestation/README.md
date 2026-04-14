@@ -1,65 +1,91 @@
 # clawfarm-attestation
 
-`clawfarm-attestation` is a dedicated Solana program for Clawfarm Phase 1
-receipt attestation.
+`clawfarm-attestation` is the dedicated Solana lifecycle program for Clawfarm
+Phase 1 receipt attestation.
 
-Its responsibilities are:
+Chinese version:
 
-- maintain a provider signer registry
-- verify provider signatures over canonical receipt digests
-- prevent replay by `request_nonce`
-- manage a governance-driven challenge lifecycle
-- close terminal receipt and challenge accounts to reclaim rent
+- [README.zh-CN.md](README.zh-CN.md)
 
 This README documents the current on-chain implementation in this repository.
 
 Source of truth:
 
-- [lib.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/programs/clawfarm-attestation/src/lib.rs)
-- [receipt.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/programs/clawfarm-attestation/src/instructions/receipt.rs)
-- [challenge.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/programs/clawfarm-attestation/src/instructions/challenge.rs)
-- [types.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/programs/clawfarm-attestation/src/state/types.rs)
+- [src/lib.rs](src/lib.rs)
+- [src/instructions/admin.rs](src/instructions/admin.rs)
+- [src/instructions/receipt.rs](src/instructions/receipt.rs)
+- [src/instructions/challenge.rs](src/instructions/challenge.rs)
+- [src/state/accounts.rs](src/state/accounts.rs)
+- [src/state/types.rs](src/state/types.rs)
+- [src/events.rs](src/events.rs)
+- [../clawfarm-masterpool/README.md](../clawfarm-masterpool/README.md)
+- [../../tests/phase1-integration.ts](../../tests/phase1-integration.ts)
+
+## Responsibilities
+
+- maintain the provider signer registry
+- verify provider signatures over canonical receipt digests
+- prevent replay by `request_nonce`
+- manage receipt and challenge lifecycle state
+- forward economic actions to `clawfarm-masterpool` through CPI
+- close terminal `Receipt` and `Challenge` accounts to reclaim rent
 
 ## High-Level Model
 
 Phase 1 uses a minimal on-chain receipt anchor.
 
-The full receipt body is expected to exist off-chain, for example in Clawfarm
-managed S3 storage. The program only keeps:
+The full receipt body stays off-chain. The program only stores:
 
 - `receipt_hash`
 - `signer`
 - lifecycle timestamps
 - receipt status
+- whether economics have already been forwarded to masterpool
 
 The trust boundary is:
 
 1. the full receipt body is canonicalized off-chain
-2. the program rebuilds the same canonical payload on-chain
+2. the program rebuilds the same canonical CBOR payload on-chain
 3. the program checks `sha256(canonical_payload) == receipt_hash`
-4. the program checks the preceding `ed25519` verify instruction
-5. the program stores a minimal receipt anchor keyed by `request_nonce`
+4. the program checks the preceding `ed25519` verification instruction
+5. the program creates a minimal `Receipt` PDA keyed by `request_nonce`
+6. the program CPIs into masterpool to record or settle the economic side
 
 ## Current Implementation Constraints
 
+- only `version == 1` receipts are accepted
+- only `ProofMode::SigLog` is accepted in Phase 1
+- only `UsageBasis::ProviderReported` is accepted in Phase 1
 - one `Receipt` PDA exists per `request_nonce`
 - one `Challenge` PDA exists per `Receipt`
-- there is no `respond_challenge` instruction in the current program
-- `ChallengeStatus` has only three on-chain values:
-  - `Open`
-  - `Accepted`
-  - `Rejected`
-- the full receipt body is not stored on-chain and no `proof_url` is stored on-chain
+- there is no `respond_challenge` instruction
+- full receipt bodies and proof URLs are not stored on-chain
+- challenge bonds and challenge settlement live in masterpool as `CLAW`, not in
+  this program as lamports
+- `close_receipt` requires both a terminal receipt state and
+  `receipt.economics_settled == true`
+- if a challenge is rejected, the receipt becomes `Finalized` but still needs a
+  later `finalize_receipt` call to settle provider payout in masterpool
+- `initialize_config` is currently just a payer-funded singleton init; unlike
+  older drafts, it does not check upgrade-authority `ProgramData`
 
-Signer roles are intentionally split:
+## Signer Roles
 
-- `authority`: submits receipts, finalizes uncontested receipts, closes terminal accounts
-- `challenge_resolver`: resolves open challenges
-- `challenger`: opens a challenge and posts the challenge bond
+- `authority`
+  - submits receipts
+  - finalizes uncontested receipts
+  - finalizes challenge-rejected receipts after economics are still pending
+  - closes terminal receipt and challenge accounts
+- `pause_authority`
+  - toggles the program pause flag
+- `challenge_resolver`
+  - resolves open challenges
+- `challenger`
+  - opens a challenge and pays the fixed `CLAW` bond through masterpool
 
 ## Program State
 
-State definitions live in [accounts.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/programs/clawfarm-attestation/src/state/accounts.rs).
+State definitions live in [src/state/accounts.rs](src/state/accounts.rs).
 
 ### `Config`
 
@@ -72,14 +98,14 @@ Fields:
 - `authority`
 - `pause_authority`
 - `challenge_resolver`
-- `treasury`
+- `masterpool_program`
 - `challenge_window_seconds`
-- `challenge_bond_lamports`
 - `is_paused`
 
 Purpose:
 
-- global governance, bond escrow destination, and timing config
+- singleton governance config for lifecycle authorities, the linked
+  `clawfarm-masterpool` program, and the challenge window
 
 ### `ProviderSigner`
 
@@ -96,7 +122,7 @@ Fields:
 
 Purpose:
 
-- minimal on-chain signer policy keyed by provider code and signer pubkey
+- minimal signer policy keyed by provider code and signer pubkey
 
 ### `Receipt`
 
@@ -112,12 +138,13 @@ Fields:
 - `challenge_deadline`
 - `finalized_at`
 - `status`
+- `economics_settled`
 
 Purpose:
 
 - replay lock keyed by `request_nonce`
-- anchor for an off-chain receipt body
-- state machine for challenge and close
+- minimal anchor for an off-chain receipt body
+- state machine for submit, challenge, finalize, and close
 
 ### `Challenge`
 
@@ -131,7 +158,7 @@ Fields:
 - `challenger`
 - `challenge_type`
 - `evidence_hash`
-- `bond_lamports`
+- `bond_amount`
 - `opened_at`
 - `resolved_at`
 - `status`
@@ -139,22 +166,16 @@ Fields:
 
 Purpose:
 
-- one dispute slot against one receipt
-
-Constraint:
-
-- the current implementation does not support multiple concurrent challenge PDAs per receipt
+- one dispute slot for one receipt
 
 ## Enum Values
 
-Definitions live in [types.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/programs/clawfarm-attestation/src/state/types.rs).
+Definitions live in [src/state/types.rs](src/state/types.rs).
 
 ### `ProofMode`
 
 - `0 = SigLog`
 - `1 = SigLogZkReserved`
-
-Phase 1 only accepts `SigLog`.
 
 ### `AttesterType`
 
@@ -168,8 +189,6 @@ Phase 1 only accepts `SigLog`.
 - `1 = ServerEstimatedReserved`
 - `2 = HybridReserved`
 - `3 = TokenizerVerifiedReserved`
-
-Phase 1 only accepts `ProviderReported`.
 
 ### `SignerStatus`
 
@@ -191,14 +210,6 @@ Phase 1 only accepts `ProviderReported`.
 - `1 = Accepted`
 - `2 = Rejected`
 
-### `ChallengeType`
-
-- `0 = InvalidSignature`
-- `1 = SignerRegistryMismatch`
-- `2 = ReplayNonce`
-- `3 = InvalidLogInclusion`
-- `4 = PayloadMismatch`
-
 ### `ResolutionCode`
 
 - `0 = None`
@@ -207,776 +218,102 @@ Phase 1 only accepts `ProviderReported`.
 - `3 = ReceiptInvalidated`
 - `4 = SignerRevoked`
 
-## Canonical Receipt Contract
+## `SubmitReceiptArgs` Contract
 
-The canonicalization logic lives in [utils.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/programs/clawfarm-attestation/src/utils.rs).
+`submit_receipt` receives the structured `SubmitReceiptArgs` payload.
 
-Rules:
+Required fields:
 
-- the program receives structured `SubmitReceiptArgs`
-- the program rebuilds a deterministic CBOR payload on-chain
-- optional fields are omitted when absent
-- `receipt_hash = sha256(canonical_cbor_bytes)`
-- the preceding transaction instruction must be a matching `ed25519`
-  verification over the raw 32-byte digest
-
-Fields intentionally excluded from the signed payload:
-
-- `signer`
+- `version`
+- `proof_mode`
+- `proof_id`
+- `request_nonce`
+- `provider`
+- `attester_type`
+- `model`
+- `usage_basis`
+- `prompt_tokens`
+- `completion_tokens`
+- `total_tokens`
+- `charge_atomic`
+- `charge_mint`
 - `receipt_hash`
-
-That means transport-only receipt metadata stays off-chain; the on-chain
-contract binds only the canonical digest plus the minimal lifecycle state.
-
-## Recommended Clawfarm S3 Flow
-
-This repository does not implement the off-chain storage service, but the current
-contract is designed to support the following operational flow.
-
-### Actors
-
-- `Provider`: returns the raw usage receipt body
-- `Clawfarm service`: canonicalizes the receipt, uploads it to S3, and submits
-  the on-chain transaction
-- `Clawfarm website`: exposes a lookup entry for users, challengers, and support
-- `clawfarm-attestation`: verifies the digest and manages lifecycle state
-
-### Recommended flow
-
-1. Provider returns the full receipt payload to Clawfarm.
-2. Clawfarm validates the payload shape and normalizes it into the canonical
-   Phase 1 schema.
-3. Clawfarm computes canonical CBOR and `receipt_hash`.
-4. Clawfarm stores the full canonical receipt in S3.
-5. Clawfarm stores metadata in its own index, such as:
-   - `receipt_hash`
-   - `request_nonce`
-   - `provider`
-   - `proof_id`
-   - S3 object key
-   - submission status
-6. Clawfarm creates the `ed25519` verify instruction and sends `submit_receipt`.
-7. The website exposes a search entry by `receipt_hash`, `request_nonce`, or
-   Clawfarm internal id.
-8. During challenge, Clawfarm or a challenger retrieves the stored object from
-   S3, reconstructs the evidence package, and submits only evidence hashes
-   on-chain.
-9. After the receipt reaches terminal state, Clawfarm closes `Challenge` and
-   `Receipt` to reclaim rent.
-
-### Suggested S3 object layout
-
-- `receipts/{provider}/{yyyy}/{mm}/{receipt_hash}.json`
-- or `receipts/{receipt_hash}.cbor`
-
-### Suggested off-chain index fields
-
-Use two small live tables keyed by PDA instead of scanning the whole account
-space:
-
-- `receipts_live` keyed by `receipt`
-  - `receipt`
-  - `request_nonce`
-  - `receipt_hash`
-  - `provider`
-  - `proof_id`
-  - `signer`
-  - `submitted_at`
-  - `challenge_deadline`
-  - `finalized_at`
-  - `receipt_status`
-  - `has_open_challenge`
-  - `next_action_at`
-  - `last_event_slot`
-  - `s3_bucket`
-  - `s3_key`
-  - `content_type`
-  - `schema_version`
-- `challenges_live` keyed by `challenge`
-  - `challenge`
-  - `receipt`
-  - `challenger`
-  - `challenge_type`
-  - `bond_lamports`
-  - `challenge_status`
-  - `resolution_code`
-  - `opened_at`
-  - `resolved_at`
-  - `last_event_slot`
-
-Recommended replay order for cold start:
-
-1. `ReceiptSubmitted`
-2. `ChallengeOpened`
-3. `ChallengeResolved`
-4. `ReceiptFinalized`
-5. `ReceiptClosed`
-6. `ChallengeClosed`
-
-### Operational notes
-
-- the trust anchor remains the on-chain `receipt_hash`, not the S3 URL
-- S3 objects should be treated as immutable after upload
-- if possible, enable bucket versioning and disallow overwrite
-- the website should read from the Clawfarm index, not derive state only from
-  S3 object listing
-- the close flow should run only after terminal state is confirmed on-chain
-
-## Resolver Bot Flow
-
-The intended `challenge_resolver` is an automated Clawfarm bot rather than a
-human-operated wallet.
-
-Recommended loop:
-
-1. subscribe to `ReceiptSubmitted`, `ChallengeOpened`, `ChallengeResolved`,
-   `ReceiptFinalized`, and `ReceiptClosed`; keep an off-chain queue keyed by
-   `receipt` pubkey
-2. treat `ReceiptSubmitted.receipt` + `ReceiptSubmitted.challenge_deadline` as
-   the canonical source for "open receipts" that still need monitoring or
-   later finalization
-3. use `ChallengeOpened` to attach dispute jobs to that receipt, then fetch the
-   full canonical receipt plus challenge evidence from off-chain storage
-4. reconstruct the dispute package off-chain and run Clawfarm-specific
-   verification logic for the requested `challenge_type`
-5. derive a single `resolution_code` from that verification result:
-   - `Rejected` if the challenge is not valid
-   - `Accepted` or `ReceiptInvalidated` if the receipt is invalid
-   - `SignerRevoked` if the signer should be slashed and revoked
-6. submit `resolve_challenge` from the bot-controlled `challenge_resolver`
-   authority
-7. for uncontested receipts, wake up at `challenge_deadline` and submit
-   `finalize_receipt` from `config.authority`; once terminal, keep using
-   `config.authority` for `close_challenge` and `close_receipt` as needed
-
-Bond escrow in the current implementation:
-
-- every open challenge transfers a fixed lamport bond to `config.treasury`
-- the bond amount is snapshotted on-chain as `challenge.bond_lamports`
-- final settlement stays outside Phase 1:
-  - if the challenge is rejected, the bond is only recorded in design as
-    future provider reward flow
-  - if the challenge is accepted, the refund to the challenger and any provider
-    slash are deferred to later treasury / `master_pool` integration
-
-Operational recommendations:
-
-- keep the resolver bot stateless on-chain; the durable source of truth should
-  remain the Clawfarm index plus the on-chain receipt/challenge PDAs
-- if you need a cold-start rebuild, scan `ReceiptSubmitted` events first, then
-  fold in `ChallengeOpened` / `ChallengeResolved` / `ReceiptFinalized` /
-  `ReceiptClosed` to reconstruct the live work queue
-- make off-chain verification deterministic and replayable so a later audit can
-  explain why a specific `resolution_code` was chosen
-- use idempotent job scheduling; the bot should safely retry if an RPC call or
-  evidence fetch fails midway
-- record the fetched evidence object version or content hash in the bot logs so
-  operators can trace the exact material used for a decision
-
-## Rent Estimate
-
-The current implementation minimizes long-lived cost by keeping only `ReceiptLite`
-on-chain and closing terminal accounts as soon as possible.
-
-### Current account sizes
-
-- `Receipt` allocated size: `97 bytes`
-- `Challenge` allocated size: `131 bytes`
-
-### Rent formula
-
-Using the current Solana rent-exempt formula:
-
-```text
-minimum_balance = (account_data_len + 128) * 6,960 lamports
-```
-
-That gives:
-
-- per `Receipt`: `(97 + 128) * 6,960 = 1,566,000 lamports = 0.001566 SOL`
-- per `Challenge`: `(131 + 128) * 6,960 = 1,802,640 lamports = 0.00180264 SOL`
-
-Important:
-
-- this is rent-exempt collateral, not permanent gas burn
-- the lamports are returned when `close_receipt` or `close_challenge` succeeds
-
-### Peak collateral formula
-
-If receipts are closed after the challenge window ends, steady-state peak locked
-collateral is approximately:
-
-```text
-receipt_peak_sol
-  = daily_call_count * challenge_window_days * 0.001566
-```
-
-If every receipt also has one live challenge at the same time, the conservative
-upper bound is:
-
-```text
-receipt_plus_challenge_peak_sol
-  = daily_call_count * challenge_window_days * 0.00331296
-```
-
-### Receipt-only peak collateral
-
-Assuming each call creates one `Receipt` and receipts are closed after the window:
-
-| Daily Calls | 1 Day Window | 3 Day Window | 7 Day Window |
-|---|---:|---:|---:|
-| 1,000 | 1.566 SOL | 4.698 SOL | 10.962 SOL |
-| 10,000 | 15.66 SOL | 46.98 SOL | 109.62 SOL |
-| 100,000 | 156.6 SOL | 469.8 SOL | 1096.2 SOL |
-
-### Conservative upper bound with one live challenge per receipt
-
-Assuming every receipt also has one `Challenge` account alive at the same time:
-
-| Daily Calls | 1 Day Window | 3 Day Window | 7 Day Window |
-|---|---:|---:|---:|
-| 1,000 | 3.31296 SOL | 9.93888 SOL | 23.19072 SOL |
-| 10,000 | 33.1296 SOL | 99.3888 SOL | 231.9072 SOL |
-| 100,000 | 331.296 SOL | 993.888 SOL | 2319.072 SOL |
-
-### Practical reading
-
-- if challenge rate is low, real usage should stay close to the receipt-only table
-- the main optimization is not lowering transaction fee, but lowering and reclaiming
-  rent collateral
-- shortening `challenge_window_seconds` directly lowers peak capital locked in rent
-
-## Instruction Reference
-
-Entry points live in [lib.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/programs/clawfarm-attestation/src/lib.rs).
-
-## 1. `initialize_config`
-
-Implementation:
-
-- [admin.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/programs/clawfarm-attestation/src/instructions/admin.rs#L11)
-
-Signature:
-
-```rust
-pub fn initialize_config(
-    ctx: Context<InitializeConfig>,
-    authority: Pubkey,
-    pause_authority: Pubkey,
-    challenge_resolver: Pubkey,
-    treasury: Pubkey,
-    challenge_window_seconds: i64,
-    challenge_bond_lamports: u64,
-) -> Result<()>
-```
-
-Accounts:
-
-- `payer`: signer, pays rent for `Config`
-- `config`: config PDA, initialized with seed `["config"]`
-- `program`: the current attestation program account
-- `program_data`: upgradeable loader `ProgramData` account for `program`
-- `system_program`
-
-Input parameters:
-
-- `authority`: main governance authority
-- `pause_authority`: authority allowed to toggle pause
-- `challenge_resolver`: resolver authority, typically an automated Clawfarm bot, allowed to resolve disputes
-- `treasury`: lamport escrow destination for open challenge bonds
-- `challenge_window_seconds`: receipt challenge window, must be `> 0`
-- `challenge_bond_lamports`: fixed lamport bond required to open one challenge, must be `> 0`
-
-Function flow:
-
-1. checks the challenge window and bond values are positive
-2. checks `program_data` matches the current program
-3. checks `payer` is the current program upgrade authority
-4. initializes the config PDA
-5. writes all governance addresses, treasury, and timing values
-6. sets `is_paused = false`
-7. emits `ConfigInitialized`
-
-Result:
-
-- a unique `Config` account exists and the program is ready for signer registry
-  updates
-- bootstrap is locked to the program upgrade authority instead of any arbitrary
-  signer
-
-Deployment order:
-
-1. build and deploy the upgradeable program while your deployer wallet is still
-   the current upgrade authority:
-   - `anchor build`
-   - `anchor deploy --program-name clawfarm_attestation`
-2. immediately confirm the deployed program id, `ProgramData` address, and
-   upgrade authority:
-   - `solana program show 52WWsrQQcpAJn4cjSxMe4XGBvgGzPXa9gjAqUSfryAx2`
-3. run `initialize_config` from that same upgrade-authority wallet, passing:
-   - accounts: `payer`, `config`, `program`, `program_data`, `system_program`
-   - args: `authority`, `pause_authority`, `challenge_resolver`, `treasury`,
-     `challenge_window_seconds`, `challenge_bond_lamports`
-4. set the config args to the long-lived operational addresses you actually want
-   to control the protocol:
-   - `authority`: governance or multisig
-   - `pause_authority`: emergency operator or governance
-   - `challenge_resolver`: resolver bot hot wallet
-   - `treasury`: bond escrow destination
-5. verify the newly created config on-chain before doing anything else that
-   depends on it
-6. only after successful initialization should you consider rotating or burning
-   the program upgrade authority
-
-Important deployment note:
-
-- if you deploy the program and then remove upgrade authority before calling
-  `initialize_config`, bootstrap will be permanently blocked by design
-- `payer` only needs to be the temporary bootstrap signer; `config.authority`
-  can and usually should be a different long-lived governance address
-
-## 2. `upsert_provider_signer`
-
-Implementation:
-
-- [admin.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/programs/clawfarm-attestation/src/instructions/admin.rs#L40)
-
-Signature:
-
-```rust
-pub fn upsert_provider_signer(
-    ctx: Context<UpsertProviderSigner>,
-    provider_code: String,
-    signer: Pubkey,
-    attester_type_mask: u8,
-    valid_from: i64,
-    valid_until: i64,
-) -> Result<()>
-```
-
-Accounts:
-
-- `authority`: signer, must equal `config.authority`
-- `config`: config PDA
-- `provider_signer`: PDA derived from `provider_code` and `signer`
-- `system_program`
-
-Input parameters:
-
-- `provider_code`: provider identifier
-- `signer`: provider or gateway signer public key
-- `attester_type_mask`: bitmask of supported attester types
-- `valid_from`: signer validity start
-- `valid_until`: signer validity end, `0` means open-ended
-
-Function flow:
-
-1. validates `provider_code`
-2. requires `attester_type_mask != 0`
-3. requires `valid_until == 0 || valid_until >= valid_from`
-4. creates or reuses the signer PDA via `init_if_needed`
-5. overwrites the minimal signer policy fields
-6. sets `status = Active`
-7. emits `ProviderSignerUpserted`
-
-Result:
-
-- a signer registry entry exists and can be used by `submit_receipt`
-
-## 3. `set_pause`
-
-Implementation:
-
-- [admin.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/programs/clawfarm-attestation/src/instructions/admin.rs#L85)
-
-Signature:
-
-```rust
-pub fn set_pause(ctx: Context<SetPause>, is_paused: bool) -> Result<()>
-```
-
-Accounts:
-
-- `pause_authority`: signer, must equal `config.pause_authority`
-- `config`: config PDA
-
-Input parameters:
-
-- `is_paused`: target pause flag
-
-Function flow:
-
-1. checks pause authority through Anchor account constraints
-2. writes `config.is_paused`
-3. emits `PauseUpdated`
-
-Result:
-
-- future `submit_receipt` calls are allowed or blocked depending on the new flag
-
-Note:
-
-- current implementation only checks pause inside `submit_receipt`
-
-## 4. `revoke_provider_signer`
-
-Implementation:
-
-- [admin.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/programs/clawfarm-attestation/src/instructions/admin.rs#L93)
-
-Signature:
-
-```rust
-pub fn revoke_provider_signer(
-    ctx: Context<RevokeProviderSigner>,
-    provider_code: String,
-    signer: Pubkey,
-) -> Result<()>
-```
-
-Accounts:
-
-- `authority`: signer, must equal `config.authority`
-- `config`: config PDA
-- `provider_signer`: signer PDA for the target provider and signer
-
-Input parameters:
-
-- `provider_code`: provider identifier
-- `signer`: signer public key to revoke
-
-Function flow:
-
-1. validates `provider_code`
-2. loads the signer PDA derived from `provider_code` and `signer`
-3. sets status to `Revoked`
-4. emits `ProviderSignerRevoked`
-
-Result:
-
-- the signer can no longer be used for future receipt submissions
-
-## 5. `submit_receipt`
-
-Implementation:
-
-- [receipt.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/programs/clawfarm-attestation/src/instructions/receipt.rs)
-
-Signature:
-
-```rust
-pub fn submit_receipt(ctx: Context<SubmitReceipt>, args: SubmitReceiptArgs) -> Result<()>
-```
-
-Accounts:
-
-- `authority`: signer, must equal `config.authority`, and pays rent for `Receipt`
-- `config`: config PDA
-- `provider_signer`: signer registry PDA
-- `receipt`: receipt PDA derived from `request_nonce`
-- `instructions_sysvar`: Solana instruction sysvar, used for `ed25519` introspection
-- `system_program`
-
-Instruction args:
-
-```rust
-pub struct SubmitReceiptArgs {
-    pub version: u8,
-    pub proof_mode: u8,
-    pub proof_id: String,
-    pub request_nonce: String,
-    pub provider: String,
-    pub attester_type: u8,
-    pub model: String,
-    pub usage_basis: u8,
-    pub prompt_tokens: u64,
-    pub completion_tokens: u64,
-    pub total_tokens: u64,
-    pub charge_atomic: u64,
-    pub charge_mint: Pubkey,
-    pub provider_request_id: Option<String>,
-    pub issued_at: Option<i64>,
-    pub expires_at: Option<i64>,
-    pub http_status: Option<u16>,
-    pub latency_ms: Option<u64>,
-    pub receipt_hash: [u8; 32],
-    pub signer: Pubkey,
-}
-```
-
-Parameter meaning:
-
-- `version`: must be `1`
-- `proof_mode`: must be `SigLog`
-- `proof_id`: provider-side proof identifier
-- `request_nonce`: unique business nonce used for replay protection
-- `provider`: provider code
-- `attester_type`: provider, gateway, or hybrid
-- `model`: off-chain model identifier
-- `usage_basis`: must be `ProviderReported`
-- `prompt_tokens`: input token count
-- `completion_tokens`: output token count
-- `total_tokens`: must equal prompt plus completion
-- `charge_atomic`: fee amount in smallest unit
-- `charge_mint`: fee mint
-- `provider_request_id`: optional provider request identifier
-- `issued_at`: optional issuance time
-- `expires_at`: optional expiry time
-- `http_status`: optional HTTP status
-- `latency_ms`: optional request latency
-- `receipt_hash`: canonical receipt digest
-- `signer`: signer public key whose matching `ed25519` verification must precede the instruction
-
-Function flow:
-
-1. checks `authority == config.authority` through Anchor account constraints
-2. validates all structured fields
-3. checks the program is not paused
-4. loads and validates the provider signer registry entry
-5. rebuilds canonical CBOR on-chain
-6. hashes the canonical payload and requires it to match `receipt_hash`
-7. inspects the previous transaction instruction and requires a matching `ed25519` verification for `signer` and `receipt_hash`
-8. creates the `Receipt` PDA
-9. stores only `receipt_hash`, `signer`, timestamps, and status
-10. emits `ReceiptSubmitted` with `receipt` and `challenge_deadline` for bot indexing
-
-Result:
-
-- one unique `Receipt` account exists for the given `request_nonce`
-- the full receipt body remains off-chain but is anchored by `receipt_hash`
-- the emitted event gives the bot a direct `receipt` pubkey plus `challenge_deadline`
-
-## 6. `open_challenge`
-
-Implementation:
-
-- [challenge.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/programs/clawfarm-attestation/src/instructions/challenge.rs)
-
-Signature:
-
-```rust
-pub fn open_challenge(
-    ctx: Context<OpenChallenge>,
-    challenge_type: u8,
-    evidence_hash: [u8; 32],
-) -> Result<()>
-```
-
-Accounts:
-
-- `challenger`: signer, pays rent for `Challenge`
-- `config`: config PDA with the treasury pubkey and fixed bond amount
-- `receipt`: target receipt account
-- `challenge`: challenge PDA for `(receipt)`
-- `treasury`: writable system account, must equal `config.treasury`
-- `system_program`
-
-Input parameters:
-
-- `challenge_type`: challenge category
-- `evidence_hash`: hash of off-chain challenge evidence
-
-Function flow:
-
-1. validates `challenge_type`
-2. checks the receipt is still `Submitted`
-3. checks current time is within the challenge window
-4. transfers `config.challenge_bond_lamports` from `challenger` to `config.treasury`
-5. creates the single `Challenge` PDA for the receipt
-6. stores challenger, evidence hash, bond snapshot, timestamps, and status
-7. sets the receipt status to `Challenged`
-8. emits `ChallengeOpened`
-
-Result:
-
-- one open dispute exists for the receipt
-- the receipt is now in `Challenged` state
-- the challenger bond is escrowed in `config.treasury`
-
-Current limitation:
-
-- the program supports one challenge slot per receipt, so a second challenge for the
-  same receipt cannot be opened until the existing challenge is resolved and closed
-
-## 7. `resolve_challenge`
-
-Implementation:
-
-- [challenge.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/programs/clawfarm-attestation/src/instructions/challenge.rs)
-
-Signature:
-
-```rust
-pub fn resolve_challenge(ctx: Context<ResolveChallenge>, resolution_code: u8) -> Result<()>
-```
-
-Accounts:
-
-- `challenge_resolver`: signer, must equal `config.challenge_resolver`
-- `config`: config PDA
-- `receipt`: referenced receipt account
-- `challenge`: target challenge account; must point at `receipt`
-
-Input parameters:
-
-- `resolution_code`: final resolution
-
-Function flow:
-
-1. validates `resolution_code` and rejects `None`
-2. checks the challenge is `Open`
-3. checks `challenge.receipt == receipt.key()`
-4. writes `resolution_code` and `resolved_at`
-5. updates the receipt to a terminal state:
-   - `Accepted` or `ReceiptInvalidated` -> `Rejected`
-   - `SignerRevoked` -> `Slashed`
-   - `Rejected` -> `Finalized`
-6. sets `receipt.finalized_at = now`
-7. emits `ChallengeResolved`
-
-Result:
-
-- the receipt leaves the active dispute state and becomes closable later
-- challenge resolution is single-step; there is no separate on-chain response phase
-
-## 8. `finalize_receipt`
-
-Implementation:
-
-- [receipt.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/programs/clawfarm-attestation/src/instructions/receipt.rs)
-
-Signature:
-
-```rust
-pub fn finalize_receipt(ctx: Context<FinalizeReceipt>) -> Result<()>
-```
-
-Accounts:
-
-- `authority`: must equal `config.authority`
-- `config`: attestation config
-- `receipt`: target receipt account
-
-Function flow:
-
-1. checks `authority == config.authority`
-2. checks the receipt is still `Submitted`
-3. checks `now > challenge_deadline`
-4. sets receipt status to `Finalized`
-5. sets `finalized_at = now`
-6. emits `ReceiptFinalized`
-
-Result:
-
-- an uncontested receipt becomes terminal under `config.authority` control and
-  can later be closed
-
-## 9. `close_challenge`
-
-Implementation:
-
-- [challenge.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/programs/clawfarm-attestation/src/instructions/challenge.rs)
-
-Signature:
-
-```rust
-pub fn close_challenge(ctx: Context<CloseChallenge>) -> Result<()>
-```
-
-Accounts:
-
-- `authority`: signer, must equal `config.authority`
-- `config`: config PDA
-- `challenge`: terminal challenge account
-
-Function flow:
-
-1. checks `authority == config.authority` through Anchor account constraints
-2. checks challenge status is terminal:
-   - `Accepted`
-   - `Rejected`
-3. emits `ChallengeClosed`
-4. closes the challenge account through Anchor `close = authority`
-
-Result:
-
-- challenge rent is returned to `config.authority`
-
-## 10. `close_receipt`
-
-Implementation:
-
-- [receipt.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/programs/clawfarm-attestation/src/instructions/receipt.rs)
-
-Signature:
-
-```rust
-pub fn close_receipt(ctx: Context<CloseReceipt>) -> Result<()>
-```
-
-Accounts:
-
-- `authority`: signer, must equal `config.authority`
-- `config`: config PDA
-- `receipt`: terminal receipt account
-
-Function flow:
-
-1. checks `authority == config.authority` through Anchor account constraints
-2. checks receipt status is terminal:
-   - `Finalized`
-   - `Rejected`
-   - `Slashed`
-3. emits `ReceiptClosed`
-4. closes the receipt account through Anchor `close = authority`
-
-Result:
-
-- receipt rent is returned to `config.authority`
-
-## Lifecycle Summary
-
-Receipt lifecycle:
-
-```text
-Submitted
-  -> Challenged
-  -> Finalized
-
-Challenged
-  -> Finalized
-  -> Rejected
-  -> Slashed
-```
-
-Closable receipt states:
-
-- `Finalized`
-- `Rejected`
-- `Slashed`
-
-Challenge lifecycle:
-
-```text
-Open
-  -> Accepted
-  -> Rejected
-```
-
-Closable challenge states:
-
-- `Accepted`
-- `Rejected`
-
-Instruction intentionally absent in the current implementation:
-
-- `respond_challenge`
-
-## Events
-
-Event definitions live in [events.rs](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/programs/clawfarm-attestation/src/events.rs).
-
-Current events:
+- `signer`
+
+Optional fields:
+
+- `provider_request_id`
+- `issued_at`
+- `expires_at`
+- `http_status`
+- `latency_ms`
+
+Validation rules currently enforced on-chain:
+
+- `version` must be `1`
+- `proof_mode` must be `SigLog`
+- `usage_basis` must be `ProviderReported`
+- `total_tokens` must equal `prompt_tokens + completion_tokens`
+- string fields must respect Phase 1 length and character limits
+- `http_status`, `issued_at`, and `expires_at` must be internally consistent
+- the preceding transaction instruction must be a matching `ed25519` verify
+  over the raw 32-byte digest
+
+## Instruction Surface
+
+Entry points live in [src/lib.rs](src/lib.rs).
+
+### Admin
+
+- `initialize_config(authority, pause_authority, challenge_resolver, masterpool_program, challenge_window_seconds)`
+  - creates the singleton config
+  - binds governance roles and the linked masterpool program
+- `upsert_provider_signer(provider_code, signer, attester_type_mask, valid_from, valid_until)`
+  - creates or updates the provider signer policy record
+- `set_pause(is_paused)`
+  - toggles the global pause flag
+- `revoke_provider_signer(provider_code, signer)`
+  - sets the signer status to revoked
+
+### Receipt Lifecycle
+
+- `submit_receipt(args: SubmitReceiptArgs)`
+  - validates the structured payload
+  - validates provider signer policy and time window
+  - rebuilds canonical CBOR and verifies `receipt_hash`
+  - verifies the preceding `ed25519` instruction
+  - creates the `Receipt` PDA
+  - CPIs into masterpool `record_mining_from_receipt`
+- `finalize_receipt()`
+  - finalizes a `Submitted` receipt after the challenge window closes
+  - or settles a previously `Finalized` but not yet economically-settled
+    receipt
+  - CPIs into masterpool `settle_finalized_receipt`
+  - sets `receipt.economics_settled = true`
+- `close_receipt()`
+  - closes a receipt only when the status is terminal and economics were already
+    forwarded to masterpool
+
+### Challenge Lifecycle
+
+- `open_challenge(challenge_type, evidence_hash)`
+  - validates the challenge type
+  - requires a still-challengeable receipt
+  - creates the `Challenge` PDA
+  - CPIs into masterpool `record_challenge_bond`
+  - moves the receipt into `Challenged`
+- `resolve_challenge(resolution_code)`
+  - requires an open challenge
+  - sets terminal receipt and challenge state
+  - CPIs into masterpool `resolve_challenge_economics`
+  - keeps `economics_settled = false` only for the `Rejected` path, because
+    provider payout still needs later finalization
+- `close_challenge()`
+  - closes a challenge after it reaches `Accepted` or `Rejected`
+
+## Event Surface
+
+Events are defined in [src/events.rs](src/events.rs).
 
 - `ConfigInitialized`
 - `ProviderSignerUpserted`
@@ -989,14 +326,42 @@ Current events:
 - `ChallengeResolved`
 - `ChallengeClosed`
 
-## Testing
+## Lifecycle Flow
 
-Current integration coverage in
-[tests/clawfarm-attestation.ts](/Users/lijing/Code/Cobra/Solana/clawfarm-masterpool/tests/clawfarm-attestation.ts):
+1. Admin initializes config and upserts one or more provider signer records.
+2. `authority` submits a receipt with a matching preceding `ed25519`
+   verification instruction.
+3. Attestation creates the `Receipt` PDA and CPIs into masterpool to record the
+   receipt economics.
+4. A challenger may open exactly one challenge during the challenge window.
+5. `challenge_resolver` resolves the challenge:
+   - `Rejected`: receipt becomes `Finalized`, challenger bond is burned in
+     masterpool, and economics still need later finalization
+   - `Accepted` or `ReceiptInvalidated`: receipt becomes `Rejected` and
+     economics are reverted in masterpool
+   - `SignerRevoked`: receipt becomes `Slashed` and economics are reverted in
+     masterpool
+6. `authority` finalizes uncontested receipts, or challenge-rejected receipts
+   that still need provider payout settlement.
+7. After terminal state and economic settlement, `authority` closes the
+   challenge and receipt accounts to reclaim rent.
 
-- config initialization
-- signer upsert
-- missing `ed25519` pre-instruction rejection
-- successful receipt submission
-- unchallenged receipt finalization and close
-- challenged receipt resolution and close
+## Tested Behavior
+
+The current end-to-end integration test in
+[../../tests/phase1-integration.ts](../../tests/phase1-integration.ts) covers:
+
+- provider signer bootstrap
+- receipt submission plus masterpool CPI recording
+- unauthorized direct masterpool receipt recording failure
+- rejected challenge plus later finalization
+- accepted challenge refund and slash path
+- duplicate receipt prevention
+- close guards that enforce `economics_settled`
+
+## Development
+
+```bash
+anchor build
+anchor test
+```
