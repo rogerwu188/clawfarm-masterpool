@@ -1,0 +1,33 @@
+{
+  "name": "clawfarm-masterpool",
+  "version": "0.1.0",
+  "description": "ClawFarm Master Pool - Solana Program",
+  "packageManager": "yarn@1.22.22",
+  "scripts": {
+    "test": "./scripts/test-phase1.sh",
+    "test:anchor": "anchor test",
+    "phase1:bootstrap:testnet": "tsx scripts/phase1/bootstrap-testnet.ts",
+    "phase1:mint:test-usdc": "tsx scripts/phase1/mint-test-usdc.ts",
+    "phase1:smoketest:devnet": "tsx scripts/phase1/devnet-smoketest.ts",
+    "phase1:post-smoke:devnet": "tsx scripts/phase1/post-smoke-validation.ts",
+    "phase1:update-config": "tsx scripts/phase1/update-config.ts",
+    "phase1:faucet:configure": "tsx scripts/phase1/faucet-configure.ts",
+    "phase1:faucet:fund": "tsx scripts/phase1/faucet-fund.ts",
+    "phase1:faucet:status": "tsx scripts/phase1/faucet-status.ts",
+    "phase1:faucet:claim": "tsx scripts/phase1/faucet-claim.ts"
+  },
+  "dependencies": {
+    "@coral-xyz/anchor": "^0.32.1",
+    "@solana/spl-token": "^0.4.0",
+    "@solana/web3.js": "^1.95.0"
+  },
+  "devDependencies": {
+    "@types/chai": "^4.3.0",
+    "@types/mocha": "^10.0.0",
+    "chai": "^4.3.0",
+    "mocha": "^10.0.0",
+    "tsx": "^4.19.3",
+    "ts-mocha": "^10.0.0",
+    "typescript": "^5.0.0"
+  }
+}

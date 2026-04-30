@@ -1,0 +1,9 @@
+/target/
+/.anchor/
+/node_modules/
+/test-ledger/
+/Cargo.lock
+/deployments/*.json
+.worktrees/
+.DS_Store
+tmp/

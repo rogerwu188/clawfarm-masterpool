@@ -1,0 +1,25 @@
+{
+  "adminKeypair": "/absolute/path/to/admin.json",
+  "payerKeypair": "/absolute/path/to/payer.json",
+  "providerWalletKeypair": "/absolute/path/to/provider-wallet.json",
+  "providerSignerKeypair": "/absolute/path/to/provider-signer.json",
+  "receiptPda": "GAHA6Kn1iYFFaYkFAdatnGdit93RVqJCTW9Sdwn7vNUV",
+  "settlementPda": "C47J7rfZRsfYS2thTLD5kHTtaxMXmhD29Zr24MFEzqWf",
+  "providerCode": "u",
+  "receiptChargeUiAmount": "10",
+  "proofId": "r",
+  "model": "m",
+  "promptTokens": 123,
+  "completionTokens": 456,
+  "challengeCases": {
+    "rejected": {
+      "requestNonce": "ps-rejected-001"
+    },
+    "accepted": {
+      "requestNonce": "ps-accepted-001"
+    },
+    "timeoutReject": {
+      "requestNonce": "ps-timeout-001"
+    }
+  }
+}

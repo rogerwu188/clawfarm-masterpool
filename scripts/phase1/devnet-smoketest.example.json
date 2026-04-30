@@ -1,0 +1,14 @@
+{
+  "adminKeypair": "/absolute/path/to/admin.json",
+  "providerWalletKeypair": "/absolute/path/to/provider-wallet.json",
+  "providerSignerKeypair": "/absolute/path/to/provider-signer.json",
+  "payerKeypair": "/absolute/path/to/payer.json",
+  "negativeProviderWalletKeypair": "/absolute/path/to/negative-provider-wallet.json",
+  "providerCode": "u",
+  "receiptChargeUiAmount": "10",
+  "requestNoncePrefix": "s",
+  "proofId": "r",
+  "model": "m",
+  "promptTokens": 123,
+  "completionTokens": 456
+}

@@ -1,0 +1,51 @@
+name: Build and Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Solana CLI
+        run: |
+          sh -c "$(curl -sSfL 'https://release.anza.xyz/stable/install')"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
+
+      - name: Install Anchor CLI
+        run: npm install -g @coral-xyz/anchor-cli
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Clean cargo cache
+        run: rm -rf target
+
+      - name: Build with no-cache
+        run: anchor build --no-cache 2>&1 || cargo build --manifest-path Cargo.toml --lib 2>&1
+
+      - name: Find build outputs
+        run: |
+          echo "=== Looking for files ==="
+          find . -name "*.so" -type f 2>/dev/null || echo "No .so"
+          find . -name "*.json" -path "*/idl/*" -type f 2>/dev/null || echo "No IDL"
+          ls -la target/ 2>/dev/null || echo "No target"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: clawfarm-build
+          path: .
+          if-no-files-found: error
